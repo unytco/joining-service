@@ -2,6 +2,26 @@ import { describe, it, expect } from 'vitest';
 import { createTestApp, fakeAgentKey } from './helpers.js';
 
 describe('Open join flow', () => {
+  it('GET /.well-known/holo-joining returns discovery document', async () => {
+    const { request } = await createTestApp();
+    const res = await request('http://localhost/.well-known/holo-joining');
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.joining_service_url).toBe('http://localhost/v1');
+    expect(body.happ_id).toBe('test-app');
+    expect(body.version).toBe('1.0');
+  });
+
+  it('GET /.well-known/holo-joining uses base_url from config', async () => {
+    const { request } = await createTestApp({ base_url: 'https://app.example.com' });
+    const res = await request('/.well-known/holo-joining');
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.joining_service_url).toBe('https://app.example.com/v1');
+  });
+
   it('GET /v1/info returns service info', async () => {
     const { request } = await createTestApp();
     const res = await request('/v1/info');

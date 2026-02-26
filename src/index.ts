@@ -7,6 +7,7 @@ export { startServer } from './server.js';
 export type { SessionStore, SessionData, ChallengeState } from './session/store.js';
 export { MemorySessionStore } from './session/memory-store.js';
 export { SqliteSessionStore } from './session/sqlite-store.js';
+export { KvSessionStore } from './session/kv-store.js';
 
 // Auth plugins
 export type { AuthMethodPlugin } from './auth-methods/plugin.js';

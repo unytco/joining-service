@@ -455,7 +455,23 @@ ENTRYPOINT ["tini", "--", "entrypoint.sh"]
 - Can be composed alongside the existing edge-node container via `docker-compose.yml`, or built as a single extended image that adds the joining service layer on top of the edge-node base
 - The `happ_config_file` tool (from `../edgenode/tools/`) can be extended to include a `joiningService` section pointing to the co-located joining service
 
-### 4.3 Shared build concerns
+### 4.3 .well-known discovery route
+
+Added `GET /.well-known/holo-joining` to the Hono app so both deployment targets serve it automatically. Returns:
+```json
+{
+  "joining_service_url": "{base_url}/v1",
+  "happ_id": "my-app",
+  "version": "1.0"
+}
+```
+Uses `config.base_url` if set, otherwise derives from the request URL.
+
+### 4.4 Cloudflare KV session store
+
+**New file**: `src/session/kv-store.ts` — `KvSessionStore` implementing `SessionStore` backed by Cloudflare Workers KV. Uses KV's built-in `expirationTtl` for automatic TTL. Agent key → session ID index stored as a separate KV key.
+
+### 4.5 Shared build concerns
 
 Both deployment targets share:
 - The same Hono application code (no target-specific route logic)
@@ -474,26 +490,149 @@ Both deployment targets share:
 
 ---
 
+## Phase 5: Lair Keystore Generalization
+
+The joining service currently uses raw `@noble/ed25519` for membrane proof signing, with key material loaded from hex files (edgenode) or env secrets (Cloudflare Worker). The HWC monorepo has a full cryptographic keystore at `packages/lair/` (`@hwc/lair`) using libsodium, but it only ships an `IndexedDBKeyStorage` backend, limiting it to browser contexts.
+
+**Goal**: Generalize the lair package with non-browser `KeyStorage` backends so it can be used across all deployment targets, then wire the joining service to use `LairClient` for membrane proof signing instead of raw ed25519.
+
+### 5.1 Lair package changes (HWC monorepo, `packages/lair/`)
+
+#### 5.1a. `MemoryKeyStorage`
+
+**New file**: `src/memory-storage.ts`
+
+Implements `KeyStorage` interface with `Map<EntryTag, StoredKeyEntry>`. No persistence. Used for:
+- Tests (replaces need for `fake-indexeddb`)
+- Cloudflare Workers (key loaded from env at startup)
+- Any context where keys are provided externally
+
+#### 5.1b. Seed utility
+
+**New file**: `src/seed-utils.ts`
+
+```typescript
+// Takes a 32-byte ed25519 seed, returns a full StoredKeyEntry
+async function seedToStoredEntry(
+  seed: Uint8Array,
+  tag: EntryTag,
+  exportable?: boolean,
+): Promise<StoredKeyEntry>
+
+// Parse hex-encoded key files
+function hexToSeed(hex: string): Uint8Array
+```
+
+`seedToStoredEntry` calls `sodium.crypto_sign_seed_keypair(seed)` and `crypto_sign_ed25519_pk_to_curve25519` — mirroring the internal logic of `LairClient.deriveSeed()` and `importSeed()`.
+
+Note: `StoredKeyEntry.seed` actually stores the 64-byte libsodium private key (not the 32-byte seed). The field name is a legacy misnomer; changing it would break the extension's IndexedDB schema.
+
+#### 5.1c. Updated exports
+
+**Modify**: `src/index.ts` — add `MemoryKeyStorage`, `seedToStoredEntry`, `hexToSeed`
+
+#### 5.1d. Package metadata
+
+**Modify**: `package.json`:
+- Rename `@hwc/lair` → `@holo-host/lair`
+- Remove `"private": true`
+- Remove unused `@hwc/shared` dependency
+- Add `"publishConfig": { "access": "public" }`
+
+#### 5.1e. HWC consumer updates
+
+Packages that import `@hwc/lair` must update to `@holo-host/lair`:
+- `packages/core/src/signing/signing-provider.ts` — imports `ILairClient`
+- `packages/extension/src/background/index.ts` — imports `createLairClient`, `EncryptedExport`
+- `packages/extension/src/lib/happ-context-manager.ts` — imports `createLairClient`, `ILairClient`
+- `packages/extension/src/popup/lair.ts` — imports lair types
+- `packages/extension/src/offscreen/ribosome-worker.ts` — imports `setLairClient`
+
+Each needs import path + `package.json` dependency updated.
+
+#### 5.1f. Tests
+
+- `src/memory-storage.test.ts` — CRUD, listEntries, clear
+- `src/seed-utils.test.ts` — deterministic keypair from seed, hexToSeed parsing
+
+#### 5.1g. Files NOT modified
+- `src/client.ts` (LairClient) — unchanged
+- `src/storage.ts` (IndexedDBKeyStorage) — unchanged
+- `src/types.ts` — unchanged
+- `src/mnemonic.ts` — unchanged
+
+### 5.2 Joining service integration
+
+#### 5.2a. `LairProofGenerator`
+
+**New file**: `src/membrane-proof/lair-signer.ts`
+
+```typescript
+class LairProofGenerator implements MembraneProofGenerator {
+  private constructor(private client: LairClient, private pubKey: Uint8Array) {}
+
+  static async fromSeed(seed: Uint8Array, tag?: string): Promise<LairProofGenerator>
+  static async fromHex(hex: string, tag?: string): Promise<LairProofGenerator>
+
+  async generate(agentKey, dnaHashes, metadata): Promise<Record<string, Uint8Array>>
+}
+```
+
+Factory methods create a `MemoryKeyStorage`, populate via `seedToStoredEntry()`, construct `LairClient`, return generator. `generate()` produces the same msgpack `{ payload, signature, signer_pub_key }` format but uses `client.signByPubKey()` instead of raw `ed.signAsync()`.
+
+#### 5.2b. Server wiring updates
+
+**Modify**: `src/server.ts` — `buildProofGenerator()` uses `LairProofGenerator.fromHex()` / `.fromSeed()`
+**Modify**: `deploy/cloudflare/worker-entry.ts` — `buildProofGenerator()` uses `LairProofGenerator.fromHex()`
+**Modify**: `test/helpers.ts` — uses `LairProofGenerator.fromSeed(randomBytes(32))`
+**Modify**: `src/index.ts` — export `LairProofGenerator`
+
+#### 5.2c. Dependencies
+
+- Add `@holo-host/lair` (or local `file:` path for dev)
+- Keep `@noble/ed25519` — still needed for reconnect signature verification in `app.ts`
+- `src/membrane-proof/ed25519-signer.ts` — retained for backwards compatibility
+
+### 5.3 Verification
+
+```bash
+# Part 1: HWC lair package
+cd packages/lair && npm run build && npm test
+
+# Part 1: Full HWC regression (rename @hwc/lair → @holo-host/lair)
+cd /path/to/holo-web-conductor
+npm run build && npm run typecheck && npm test
+
+# Part 2: Joining service
+cd /path/to/joining-service
+npm run typecheck && npm test
+```
+
+---
+
 ## Phase Ordering and Dependencies
 
 ```
 Phase 2 (Extension plumbing)           ──  COMPLETE
 Phase 3.1-3.4 (Reference Server)      ──  COMPLETE (37 tests passing)
+Phase 1.1 (JoiningClient)             ──  COMPLETE (21 tests)
+Phase 1.2 (dnaModifiers type)         ──  COMPLETE
+Phase 1.3 (WebConductorAppClient)     ──  COMPLETE (9 new tests, 37 total in file)
+Phase 1.4 (GatewayProxy)              ──  COMPLETE (12 tests)
+Phase 1.5 (Exports)                   ──  COMPLETE
+Phase 4.1 (Cloudflare)                ──  COMPLETE (KV store + worker entry + wrangler config, 11 tests)
+Phase 4.2 (Edge-node Docker)           ──  COMPLETE (Dockerfile + nginx + entrypoint + docker-compose)
+Phase 4.3-4.5 (Shared)                ──  COMPLETE (.well-known route, KV session store, 2 tests)
 
-Phase 1.1 (JoiningClient)             ──► Phase 1.3 (WebConductorAppClient)
-
-Phase 1.2 (dnaModifiers type)         ──► Phase 1.3
-
-Phase 4.1 (Cloudflare)                ──  ready to start
-Phase 4.2 (Edge-node Docker)           ──  ready to start
+Phase 5.1 (Lair package generalization) ──  ready to start
+Phase 5.2 (Joining service integration) ──  blocked on 5.1
 ```
 
-Phase 2 is done. Phase 3 is done (core server with open, email_code, and invite_code auth methods; memory + SQLite session stores; 37 tests passing). Phase 1.1 can proceed now. Phase 1.3 depends on 1.1 completing. Phase 1.2 is a small type addition that can be done alongside 1.1. Phase 4 (both deployment targets) can now start since Phase 3 is complete. Phase 4.1 and 4.2 can proceed in parallel.
+Phases 1-4 are done. Phase 5 can now start — lair package changes (5.1) must complete before joining service integration (5.2).
 
 **Remaining work:**
-- Phase 1: HWC client library (JoiningClient, WebConductorAppClient integration)
 - Phase 3 stretch: evm_signature auth method
-- Phase 4: Cloudflare Worker + edge-node Docker deployment configs
+- Phase 5: Lair keystore generalization + joining service integration
 
 ---
 
@@ -546,11 +685,11 @@ For **manual QA / demo testing**, run the server with `"provider": "file"` and `
 
 | File | Phase | Status | Change |
 |------|-------|--------|--------|
-| `packages/client/src/joining.ts` | 1.1 | TODO | New: JoiningClient, JoinSession, reconnect() |
-| `packages/client/src/gateway-proxy.ts` | 1.4 | TODO | New: GatewayProxy |
-| `packages/client/src/types.ts` | 1.2 | PARTIAL | `membraneProofs` done; add `dnaModifiers` to InstallAppRequest |
-| `packages/client/src/WebConductorAppClient.ts` | 1.3 | TODO | Extend options, update connect(), add reconnect() |
-| `packages/client/src/index.ts` | 1.5 | TODO | Export new modules |
+| `packages/client/src/joining.ts` | 1.1 | DONE | JoiningClient, JoinSession, JoiningError, all API types (21 tests) |
+| `packages/client/src/gateway-proxy.ts` | 1.4 | DONE | GatewayProxy, GatewayError (12 tests) |
+| `packages/client/src/types.ts` | 1.2 | DONE | `membraneProofs` + `dnaModifiers` on InstallAppRequest |
+| `packages/client/src/WebConductorAppClient.ts` | 1.3 | DONE | Joining service integration, reconnect, membrane proof decoding (9 new tests) |
+| `packages/client/src/index.ts` | 1.5 | DONE | All joining + gateway exports |
 | `packages/extension/src/background/index.ts` | 2.1 | DONE | Handles membraneProofs in install + PROVIDE_MEMPROOFS |
 | `packages/extension/src/lib/happ-context-manager.ts` | 2.1 | DONE | installHapp, provideMemproofs, completeMemproofs |
 | `packages/core/src/storage/genesis.ts` | 2.2 | DONE | initializeGenesis accepts membraneProof, threads into AgentValidationPkg |
@@ -575,3 +714,14 @@ For **manual QA / demo testing**, run the server with `"provider": "file"` and `
 | `joining-service/src/membrane-proof/generator.ts` | 3.4 | DONE | MembraneProofGenerator interface |
 | `joining-service/src/membrane-proof/ed25519-signer.ts` | 3.4 | DONE | Ed25519 signing + msgpack proof encoding |
 | `joining-service/src/index.ts` | 3.1 | DONE | Public API exports |
+| `joining-service/src/session/kv-store.ts` | 4.1 | DONE | Cloudflare KV session store (11 tests) |
+| `joining-service/deploy/cloudflare/wrangler.toml` | 4.1 | DONE | Worker + KV namespace config |
+| `joining-service/deploy/cloudflare/worker-entry.ts` | 4.1 | DONE | Cloudflare Worker fetch handler |
+| `joining-service/deploy/edgenode/Dockerfile` | 4.2 | DONE | Multi-stage build (node:20-alpine → wolfi-base) |
+| `joining-service/deploy/edgenode/nginx.conf` | 4.2 | DONE | Reverse proxy (/v1/*, /.well-known/* → :3000) |
+| `joining-service/deploy/edgenode/entrypoint.sh` | 4.2 | DONE | First-boot key gen, config, start services |
+| `joining-service/deploy/edgenode/docker-compose.yml` | 4.2 | DONE | Compose with joining-service container |
+| `joining-service/src/app.ts` (.well-known) | 4.3 | DONE | GET /.well-known/holo-joining discovery route (2 tests) |
+| `packages/lair/src/memory-storage.ts` | 5.1 | TODO | MemoryKeyStorage backend |
+| `packages/lair/src/seed-utils.ts` | 5.1 | TODO | seedToStoredEntry + hexToSeed helpers |
+| `joining-service/src/membrane-proof/lair-signer.ts` | 5.2 | TODO | LairProofGenerator using LairClient |

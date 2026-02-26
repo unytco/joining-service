@@ -1,0 +1,38 @@
+# Docker Compose for joining service alongside an edge-node.
+#
+# This composes the joining service container with the existing edgenode.
+# The joining service handles /v1/* and /.well-known/* routes on port 8080.
+# The edgenode runs the Holochain conductor on port 4444.
+#
+# Usage:
+#   docker compose -f deploy/edgenode/docker-compose.yml up
+#
+# Volumes:
+#   joining-data: persists config, sessions DB, and signing key
+#   edgenode-data: persists Holochain conductor state
+
+services:
+  joining-service:
+    build:
+      context: ../..
+      dockerfile: deploy/edgenode/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - joining-data:/data
+      # Mount your UI build output:
+      # - ./path/to/ui-dist:/data/ui:ro
+    restart: unless-stopped
+
+  # Uncomment to compose with the edgenode conductor:
+  # edgenode:
+  #   image: holo-host/edgenode:latest
+  #   ports:
+  #     - "4444:4444"
+  #   volumes:
+  #     - edgenode-data:/data
+  #   restart: unless-stopped
+
+volumes:
+  joining-data:
+  # edgenode-data:

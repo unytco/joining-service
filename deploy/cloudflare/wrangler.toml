@@ -1,0 +1,27 @@
+name = "joining-service"
+main = "worker-entry.ts"
+compatibility_date = "2024-12-01"
+
+# KV namespace for session storage
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+
+# Routes: Worker handles /v1/* and /.well-known/* on your domain.
+# Static UI assets are served by Cloudflare Pages on the same domain.
+#
+# To deploy:
+#   1. Create the KV namespace:
+#      npx wrangler kv:namespace create SESSIONS
+#      npx wrangler kv:namespace create SESSIONS --preview
+#   2. Replace the KV namespace IDs above
+#   3. Set secrets:
+#      npx wrangler secret put CONFIG_JSON
+#      npx wrangler secret put SIGNING_KEY_HEX  (if membrane_proof.enabled)
+#   4. Deploy:
+#      npx wrangler deploy -c deploy/cloudflare/wrangler.toml
+
+[vars]
+# Non-secret config can go here. For full config, use CONFIG_JSON secret.
+# CONFIG_JSON = '{"happ":{"id":"my-app","name":"My App"},...}'

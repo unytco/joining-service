@@ -28,9 +28,10 @@ export interface ServiceConfig {
     template?: string;
     output_dir?: string;
   };
+  base_url?: string;
   invite_codes?: string[];
   session?: {
-    store: 'memory' | 'sqlite';
+    store: 'memory' | 'sqlite' | 'cloudflare-kv';
     db_path?: string;
     pending_ttl_seconds?: number;
     ready_ttl_seconds?: number;

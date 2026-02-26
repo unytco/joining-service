@@ -40,6 +40,17 @@ export function createApp(ctx: ServiceContext): Hono {
     c.header('X-Joining-Service-Version', '1.0');
   });
 
+  // ---- GET /.well-known/holo-joining ----
+  app.get('/.well-known/holo-joining', (c) => {
+    const { config } = ctx;
+    const baseUrl = config.base_url ?? c.req.url.replace(/\/.well-known\/holo-joining$/, '');
+    return c.json({
+      joining_service_url: `${baseUrl}/v1`,
+      happ_id: config.happ.id,
+      version: '1.0',
+    });
+  });
+
   // ---- GET /v1/info ----
   app.get('/v1/info', (c) => {
     const { config } = ctx;
