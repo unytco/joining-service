@@ -23,6 +23,7 @@ JoiningClient
   ├── static fromUrl(joiningServiceUrl: string): Promise<JoiningClient>
   ├── getInfo(): Promise<JoiningServiceInfo>
   ├── join(agentKey: string, claims?): Promise<JoinSession>
+  ├── reconnect(agentKey: string, signTimestamp: (ts: string) => Promise<Uint8Array>): Promise<ReconnectResponse>
   └── (internal HTTP methods)
 
 JoinSession
@@ -37,15 +38,18 @@ JoinSession
 Key decisions:
 - Uses `fetch()` internally (available in all modern browsers)
 - Immutable session objects — `verify()` and `pollStatus()` return new `JoinSession` instances
-- Exports all TypeScript types from `JOINING_SERVICE_API.md` Section 9
+- Exports all TypeScript types from `JOINING_SERVICE_API.md` Section 9 (including `ReconnectRequest`, `ReconnectResponse`)
 - Includes a `JoiningError` class wrapping the API error format
+- `reconnect()` accepts a signing callback so the client controls key access — the `JoiningClient` generates the ISO 8601 timestamp, passes it to the callback to get an ed25519 signature, then POSTs to `/v1/reconnect`
 
-### 1.2 Type additions
+### 1.2 Type additions — PARTIALLY DONE
 
-**Modified file**: `packages/client/src/types.ts`
+**`packages/client/src/types.ts`** — membrane proof types already exist:
+- `InstallAppRequest` already has `membraneProofs?: Record<string, Uint8Array | number[]>` (per-role, keyed by role name)
+- `HolochainAPI` already has `provideMemproofs(params: { contextId?: string; memproofs: Record<string, Uint8Array | number[]> })`
 
-- Add `membraneProof?: Uint8Array | number[]` to `InstallAppRequest`
-- Add `dnaModifiers?: { networkSeed?: string; properties?: Record<string, unknown> }` to `InstallAppRequest`
+**Still needed**:
+- Add `dnaModifiers?: { networkSeed?: string; properties?: Record<string, unknown> }` to `InstallAppRequest` (for joining service to pass DNA modifiers through install)
 
 ### 1.3 WebConductorAppClient integration
 
@@ -62,17 +66,28 @@ interface WebConductorAppClientOptions extends ConnectionConfig {
   joiningServiceUrl?: string;   // Explicit joining service URL
   autoDiscover?: boolean;       // Discover from current domain's .well-known
   onChallenge?: (challenge: Challenge) => Promise<string>;  // UI callback for verification
-  membraneProof?: Uint8Array;   // Pre-obtained membrane proof (bypass joining service)
+  membraneProofs?: Record<string, Uint8Array>;  // Pre-obtained membrane proofs (bypass joining service)
 }
 ```
+
+Note: The extension API uses `Record<string, Uint8Array>` keyed by role name. The joining service returns `membrane_proofs` as `Record<DnaHash, base64-string>` keyed by DnaHash. The client must map DnaHash keys to role names (using the hApp manifest or the `dna_hashes` from `/v1/info`) and base64-decode the values to `Uint8Array` before passing to `installHapp()`.
 
 Update `connect()` flow:
 1. If `autoDiscover` or `joiningServiceUrl` provided, use `JoiningClient`
 2. Generate agent key (existing flow via `window.holochain.connect()`)
 3. Call `join()` with agent key + any claims
-4. If pending, invoke `onChallenge` callback for each challenge
-5. Get credentials, configure linker URL, fetch and install hApp bundle with membrane proof
-6. Fall back to existing direct `linkerUrl` flow if no joining service configured
+4. If join returns `409 agent_already_joined`, call `reconnect()` instead to get fresh URLs
+5. If pending, invoke `onChallenge` callback for each challenge
+6. Get credentials; for each entry in `membrane_proofs` (keyed by DnaHash), base64-decode the proof to `Uint8Array` and map the DnaHash key to the corresponding role name, producing `Record<string, Uint8Array>` for the extension API
+7. Call `installHapp({ bundle, membraneProofs })` — uses the one-step flow (genesis runs immediately since proofs are provided at install time)
+8. Configure linker URL from credentials
+9. Fall back to existing direct `linkerUrl` flow if no joining service configured
+
+Add `reconnect()` method:
+- Called when the client already has an installed hApp but needs updated linker/gateway URLs
+- Uses the agent's ed25519 key (available via the extension's key management) to sign the timestamp
+- Returns updated `linker_urls`, `http_gateways`, and `linker_urls_expire_at`
+- The client should call this proactively when `linker_urls_expire_at` is approaching, or reactively when a linker connection fails
 
 ### 1.4 HTTP Gateway proxy (R/O mode)
 
@@ -97,40 +112,58 @@ Export: `JoiningClient`, `JoinSession`, `GatewayProxy`, all joining types.
 
 ---
 
-## Phase 2: Extension Plumbing
+## Phase 2: Extension Plumbing — COMPLETE
 
-### 2.1 Membrane proof in install flow
+All membrane proof plumbing is already implemented in `holo-web-conductor`. No further extension changes are needed for the joining service. Summary of existing implementation:
 
-**Modified file**: `packages/extension/src/background/index.ts`
+### 2.1 Membrane proof in install flow — DONE
 
-Update `handleInstallHapp` to accept and forward `membraneProof` from the `InstallAppRequest`.
+**`packages/extension/src/background/index.ts`** (lines 847–890):
+- `INSTALL_HAPP` handler normalizes `membraneProofs` from `Record<string, Uint8Array | number[]>` to `Record<string, Uint8Array>`
+- If proofs provided at install time AND app has `allow_deferred_memproofs=true`, genesis runs immediately (one-step flow)
+- If proofs not provided, context enters `awaitingMemproofs` status (deferred flow)
 
-**Modified file**: `packages/extension/src/lib/happ-context-manager.ts`
+**`packages/extension/src/background/index.ts`** (lines 1030–1068):
+- `PROVIDE_MEMPROOFS` handler accepts deferred proofs, runs genesis for each DNA, transitions context to `enabled`
 
-Update `installHapp()` to:
-- Accept optional `membraneProof: Uint8Array`
-- Store it in the `HappContext`
-- Pass it through to genesis
+**`packages/extension/src/lib/happ-context-manager.ts`**:
+- `installHapp()` checks `allow_deferred_memproofs` manifest flag to determine initial status
+- `provideMemproofs(contextId, memproofs)` validates context is in `awaitingMemproofs` state
+- `completeMemproofs(contextId)` transitions status to `enabled` after genesis succeeds
 
-### 2.2 Genesis membrane proof
+### 2.2 Genesis membrane proof — DONE
 
-**Modified file**: `packages/core/src/storage/genesis.ts`
+**`packages/core/src/storage/genesis.ts`** (lines 53–128):
+- `initializeGenesis(storage, dnaHash, agentPubKey, membraneProof?)` threads proof into `AgentValidationPkg` action
+- Proof is included in the signed action and stored in the source chain
 
-Update `initializeGenesis()` to:
-- Accept optional `membraneProof: Uint8Array`
-- Include it in the `AgentValidationPkg` action (currently hardcoded to empty/null)
+**`packages/core/src/ribosome/genesis-self-check.ts`** (lines 49–164):
+- `runGenesisSelfCheck(dnaManifest, cellId, membraneProof?)` passes proof to WASM `genesis_self_check` callback
+- Proof serialized as msgpack `GenesisSelfCheckDataV2 { membrane_proof, agent_key }`
 
-### 2.3 Context storage
+### 2.3 Storage — DONE
 
-**Modified file**: `packages/extension/src/lib/happ-context-storage.ts`
+- **SQLite**: `membrane_proof BLOB` column in actions table (`packages/core/src/storage/sqlite-schema.ts`)
+- **IndexedDB**: `membraneProof?: number[]` on `StorableAction` (`packages/core/src/storage/types.ts`)
+- **In-memory**: `membraneProof?: Uint8Array` on `AgentValidationPkgAction`
 
-Add `membraneProof?: Uint8Array` to the stored `HappContext` schema. Handle serialization for IndexedDB.
+### 2.4 Message passing — DONE
 
-### 2.4 Message passing
+**`packages/extension/src/lib/messaging.ts`**:
+- `MessageType.PROVIDE_MEMPROOFS` message type
+- `ProvideMemproofsPayload { contextId: string; memproofs: Record<string, Uint8Array> }`
+- Chrome message boundaries handled via existing `toUint8Array()` normalization
 
-**Modified file**: `packages/extension/src/lib/messaging.ts` (or equivalent)
+### Key design detail: per-role membrane proofs
 
-Ensure `membraneProof` (as `number[]`) survives Chrome message passing boundaries. Apply existing `normalizeUint8Arrays` / `serializeForTransport` patterns.
+The extension uses `Record<string, Uint8Array>` keyed by role name, not a single proof. A hApp with multiple DNAs can have a different membrane proof per role. The joining service's `membrane_proofs` field returns `Record<DnaHash, base64-string>` — one entry per DNA that requires a proof. The client maps DnaHash keys to role names before passing to the extension.
+
+### Two installation flows
+
+1. **One-step**: `installHapp({ bundle, membraneProofs })` → genesis runs immediately → `enabled`
+2. **Deferred**: `installHapp({ bundle })` → `awaitingMemproofs` → later `provideMemproofs({ contextId, memproofs })` → genesis → `enabled`
+
+The joining service integration will use the one-step flow: credentials are obtained before install, so proofs are available at install time.
 
 ---
 
@@ -151,7 +184,8 @@ joining-service/
 │   │   ├── join.ts           # POST /v1/join
 │   │   ├── verify.ts         # POST /v1/join/:session/verify
 │   │   ├── status.ts         # GET /v1/join/:session/status
-│   │   └── credentials.ts    # GET /v1/join/:session/credentials
+│   │   ├── credentials.ts    # GET /v1/join/:session/credentials
+│   │   └── reconnect.ts      # POST /v1/reconnect
 │   ├── auth-methods/
 │   │   ├── open.ts           # No-op auth
 │   │   ├── email-code.ts     # Email verification
@@ -171,7 +205,8 @@ joining-service/
 ├── test/
 │   ├── open-join.test.ts
 │   ├── email-verification.test.ts
-│   └── invite-code.test.ts
+│   ├── invite-code.test.ts
+│   └── reconnect.test.ts
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -206,6 +241,11 @@ The reference server is configured via a JSON config file or environment variabl
     "store": "memory",
     "pending_ttl_seconds": 3600,
     "ready_ttl_seconds": 86400
+  },
+  "linker_urls_expire_after_seconds": 21600,
+  "reconnect": {
+    "enabled": true,
+    "timestamp_tolerance_seconds": 300
   }
 }
 ```
@@ -236,35 +276,43 @@ This allows hApp developers to add custom auth methods by implementing the plugi
 
 ### 3.4 Membrane proof generation
 
-The reference implementation uses Ed25519 signing:
+The reference implementation uses Ed25519 signing. The generator produces a proof per DNA, keyed by DnaHash:
 
 ```typescript
 interface MembraneProofGenerator {
-  generate(agentKey: string, metadata?: Record<string, unknown>): Promise<Uint8Array>;
+  // Generate proofs for all DNAs that require them
+  generate(
+    agentKey: string,
+    dnaHashes: string[],
+    metadata?: Record<string, unknown>
+  ): Promise<Record<string, Uint8Array>>;
+  // Returns Record<DnaHash, proof bytes>
 }
 ```
 
-Default implementation:
-1. Create payload: `{ agent_key, timestamp, nonce }`
+Default implementation (per DNA):
+1. Create payload: `{ agent_key, dna_hash, timestamp, nonce }`
 2. Sign with the service's Ed25519 key
 3. Return msgpack-encoded `{ payload, signature, signer_pub_key }`
 
-The DNA's `genesis_self_check` validates by checking the signature against the signer pub key stored in DNA properties.
+The DNA's `genesis_self_check` validates by checking the signature against the signer pub key stored in DNA properties. Each DNA validates its own proof independently.
 
 ---
 
 ## Phase Ordering and Dependencies
 
 ```
-Phase 1.1-1.2 (types + JoiningClient)  ──► Phase 1.3 (WebConductorAppClient)
-                                        ──► Phase 3 (Reference Server)
+Phase 2 (Extension plumbing)           ──  COMPLETE
 
-Phase 2.1-2.4 (Extension plumbing)     ──► Phase 1.3 (membrane proof threading)
+Phase 1.1 (JoiningClient)             ──► Phase 1.3 (WebConductorAppClient)
+                                       ──► Phase 3 (Reference Server)
 
-Phase 3.1-3.4 (Reference Server)       ──► Integration testing
+Phase 1.2 (dnaModifiers type)         ──► Phase 1.3
+
+Phase 3.1-3.4 (Reference Server)      ──► Integration testing
 ```
 
-Phases 1.1-1.2 and 2.1-2.4 can proceed in parallel. Phase 1.3 depends on both. Phase 3 depends on 1.1 for types but can otherwise proceed independently.
+Phase 2 is done. Phase 1.1 and Phase 3 can proceed in parallel. Phase 1.3 depends on 1.1 completing. Phase 1.2 is a small type addition that can be done alongside 1.1.
 
 ---
 
@@ -272,34 +320,41 @@ Phases 1.1-1.2 and 2.1-2.4 can proceed in parallel. Phase 1.3 depends on both. P
 
 ### Unit Tests
 - `JoiningClient`: Mock HTTP responses, test all status transitions (ready, pending, rejected), challenge flows, error handling
+- `JoiningClient.reconnect()`: Test signature generation callback, timestamp validation, successful reconnect, error cases (agent not joined, bad signature)
 - `JoinSession`: Test immutability, verify/poll/getCredentials methods
 - `GatewayProxy`: Mock gateway responses
 - Reference server routes: Test each endpoint with various auth methods
+- Reconnect route: Test ed25519 signature verification, timestamp drift rejection, agent-not-joined guard
 
 ### Integration Tests
 - Reference server + `JoiningClient`: End-to-end join flow
 - Open auth: join → credentials in 2 calls
 - Email auth: join → verify → credentials
 - Invite code: join with valid/invalid code
+- Reconnect: join → use credentials → reconnect with signature → receive updated URLs
+- Reconnect after expiry: verify client gets fresh linker URLs with new `linker_urls_expire_at`
 
 ### E2E Tests
 - Full browser flow: extension + joining service + linker
 - Test `.well-known` discovery
 - Test membrane proof threading through install and genesis
 - Test R/O gateway fallback before join
+- Test reconnect flow: install hApp, simulate linker URL expiry, reconnect, verify new linker connection
 
 ---
 
 ## Critical Files Reference
 
-| File | Phase | Change |
-|------|-------|--------|
-| `packages/client/src/joining.ts` | 1.1 | New: JoiningClient, JoinSession |
-| `packages/client/src/gateway-proxy.ts` | 1.4 | New: GatewayProxy |
-| `packages/client/src/types.ts` | 1.2 | Add membraneProof to InstallAppRequest |
-| `packages/client/src/WebConductorAppClient.ts` | 1.3 | Extend options, update connect() |
-| `packages/client/src/index.ts` | 1.5 | Export new modules |
-| `packages/extension/src/background/index.ts` | 2.1 | Forward membraneProof in install |
-| `packages/extension/src/lib/happ-context-manager.ts` | 2.1 | Accept membraneProof |
-| `packages/core/src/storage/genesis.ts` | 2.2 | Thread membraneProof into AgentValidationPkg |
-| `packages/extension/src/lib/happ-context-storage.ts` | 2.3 | Store membraneProof |
+| File | Phase | Status | Change |
+|------|-------|--------|--------|
+| `packages/client/src/joining.ts` | 1.1 | TODO | New: JoiningClient, JoinSession, reconnect() |
+| `packages/client/src/gateway-proxy.ts` | 1.4 | TODO | New: GatewayProxy |
+| `packages/client/src/types.ts` | 1.2 | PARTIAL | `membraneProofs` done; add `dnaModifiers` to InstallAppRequest |
+| `packages/client/src/WebConductorAppClient.ts` | 1.3 | TODO | Extend options, update connect(), add reconnect() |
+| `packages/client/src/index.ts` | 1.5 | TODO | Export new modules |
+| `packages/extension/src/background/index.ts` | 2.1 | DONE | Handles membraneProofs in install + PROVIDE_MEMPROOFS |
+| `packages/extension/src/lib/happ-context-manager.ts` | 2.1 | DONE | installHapp, provideMemproofs, completeMemproofs |
+| `packages/core/src/storage/genesis.ts` | 2.2 | DONE | initializeGenesis accepts membraneProof, threads into AgentValidationPkg |
+| `packages/core/src/ribosome/genesis-self-check.ts` | 2.2 | DONE | runGenesisSelfCheck passes proof to WASM |
+| `packages/core/src/storage/types.ts` | 2.3 | DONE | AgentValidationPkgAction.membraneProof, StorableAction serialization |
+| `packages/extension/src/lib/messaging.ts` | 2.4 | DONE | PROVIDE_MEMPROOFS message type + payload |

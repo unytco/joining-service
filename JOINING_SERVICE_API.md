@@ -13,16 +13,22 @@ Each hApp developer runs their own joining service (or uses a hosted one). The H
 ### User Flow Summary
 
 ```
-1. User loads web page
-2. Extension auto-detected (or download prompted)
-3. Client discovers joining service via .well-known
-4. GET /v1/info → R/O gateway URLs (optional browse-before-join)
-5. Extension generates agent key
-6. POST /v1/join → session + challenges (if any)
-7. User completes verification challenges (if any)
-8. GET /v1/join/{session}/credentials → linker URLs, membrane proof, hApp bundle URL
-9. Client installs hApp with credentials
-10. Standard hApp UI operates
+First-time join:
+  1. User loads web page
+  2. Extension auto-detected (or download prompted)
+  3. Client discovers joining service via .well-known
+  4. GET /v1/info → R/O gateway URLs (optional browse-before-join)
+  5. Extension generates agent key
+  6. POST /v1/join → session + challenges (if any)
+  7. User completes verification challenges (if any)
+  8. GET /v1/join/{session}/credentials → linker URLs, membrane proof, hApp bundle URL
+  9. Client installs hApp with credentials
+  10. Standard hApp UI operates
+
+Reconnect (linker URLs expired or infrastructure changed):
+  11. POST /v1/reconnect { agent_key, timestamp, signature }
+      → updated linker URLs, gateway URLs
+  12. Client reconnects to new linker URLs
 ```
 
 ---
@@ -208,7 +214,7 @@ The client sends its agent key and optional identity claims. The server determin
 |-------------|------|-------------|
 | 400 | `invalid_agent_key` | Agent key is not valid base64 or not 39 bytes |
 | 400 | `missing_claims` | Required claims for this hApp's auth method were not provided |
-| 409 | `agent_already_joined` | This agent key has already completed joining |
+| 409 | `agent_already_joined` | This agent key has already completed joining. Use `POST /v1/reconnect` instead. |
 | 429 | `rate_limited` | Too many join attempts |
 
 ---
@@ -323,25 +329,28 @@ Retrieve the credentials needed to connect to the Holochain network. Only availa
     "wss://linker1.example.com:8090",
     "wss://linker2.example.com:8090"
   ],
-  "membrane_proof": "gqNPa6RkYXRh...",
+  "membrane_proofs": {
+    "uhC0k_chat_dna_hash...": "gqNPa6RkYXRh...",
+    "uhC0k_profile_dna_hash...": "hRtYm9keW..."
+  },
   "happ_bundle_url": "https://app.example.com/mewsfeed.happ",
   "dna_modifiers": {
     "network_seed": "mewsfeed-mainnet-2026",
     "properties": {}
   },
-  "expires_at": "2026-02-25T12:00:00Z"
+  "linker_urls_expire_at": "2026-02-25T18:00:00Z"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `linker_urls` | string[] | yes | Ordered list of linker WebSocket URLs (client tries in order) |
-| `membrane_proof` | string | no | Base64-encoded msgpack bytes. Null/absent if hApp has no membrane requirement. |
+| `membrane_proofs` | object | no | Map of DnaHash (base64-encoded, e.g. `uhC0k...`) to base64-encoded msgpack membrane proof bytes. One entry per DNA role that requires a membrane proof. Absent/empty if the hApp has no membrane requirement. |
 | `happ_bundle_url` | string (URL) | no | URL to fetch the .happ bundle. May differ from `/info` response (gated behind auth). |
 | `dna_modifiers` | object | no | DNA modifiers to apply during installation |
 | `dna_modifiers.network_seed` | string | no | Network seed |
 | `dna_modifiers.properties` | object | no | DNA properties (JSON; client encodes to msgpack) |
-| `expires_at` | string (ISO 8601) | no | When these credentials expire (client should re-join) |
+| `linker_urls_expire_at` | string (ISO 8601) | no | When the linker URLs stop accepting connections from this agent. Membrane proofs do not expire — once committed during genesis they are permanent on the DHT. Client should call `POST /v1/reconnect` to obtain fresh linker URLs before or after expiry. |
 
 **Errors**:
 
@@ -350,6 +359,66 @@ Retrieve the credentials needed to connect to the Holochain network. Only availa
 | 401 | `invalid_session` | Session token is invalid or expired |
 | 403 | `not_ready` | Session exists but status is not `"ready"` |
 | 410 | `session_expired` | Session has expired; must start over |
+
+---
+
+### 3.6 `POST /v1/reconnect` — Reconnect (Get Updated URLs)
+
+An agent that has already completed joining can request updated linker URLs and gateway URLs. This is used when:
+- Linker URL reservations have expired (`linker_urls_expire_at` has passed)
+- The client has lost connectivity and needs fresh infrastructure URLs
+- The pool of available linkers or gateways has changed
+
+This endpoint does **not** re-run verification challenges. Instead, the agent proves key ownership by signing a timestamp with their ed25519 private key.
+
+**Request**:
+```json
+{
+  "agent_key": "uhCAk...",
+  "timestamp": "2026-02-25T12:00:00Z",
+  "signature": "base64-encoded-ed25519-signature-of-timestamp"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `agent_key` | string | yes | Base64-encoded 39-byte AgentPubKey (same key used during join) |
+| `timestamp` | string (ISO 8601) | yes | Current UTC timestamp. Server rejects if more than 5 minutes from server time. |
+| `signature` | string | yes | Base64-encoded ed25519 signature of the exact `timestamp` string, signed with the private key corresponding to `agent_key` |
+
+**Response** (`200 OK`):
+```json
+{
+  "linker_urls": [
+    "wss://linker3.example.com:8090",
+    "wss://linker4.example.com:8090"
+  ],
+  "http_gateways": [
+    {
+      "url": "https://gw2.example.com",
+      "dna_hashes": ["uhC0k..."],
+      "status": "available"
+    }
+  ],
+  "linker_urls_expire_at": "2026-02-25T18:00:00Z"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `linker_urls` | string[] | yes | Updated ordered list of linker WebSocket URLs |
+| `http_gateways` | array | no | Current read-only gateway instances (same schema as `/v1/info`) |
+| `linker_urls_expire_at` | string (ISO 8601) | no | When the new linker URL reservation expires |
+
+**Errors**:
+
+| HTTP Status | Code | Description |
+|-------------|------|-------------|
+| 400 | `invalid_agent_key` | Agent key is not valid base64 or not 39 bytes |
+| 400 | `invalid_signature` | Signature does not verify against agent key |
+| 400 | `timestamp_out_of_range` | Timestamp is more than 5 minutes from server time |
+| 403 | `agent_not_joined` | This agent key has not completed joining |
+| 429 | `rate_limited` | Too many reconnect attempts |
 
 ---
 
@@ -421,6 +490,7 @@ Recommended limits:
 | `POST /v1/join/{session}/verify` | 5/min | per session |
 | `GET /v1/join/{session}/credentials` | 30/min | per session |
 | `GET /v1/join/{session}/status` | 30/min | per session |
+| `POST /v1/reconnect` | 10/min | per agent key |
 
 ---
 
@@ -436,9 +506,10 @@ Recommended limits:
 - The server does NOT verify private key ownership — that proof happens at the Holochain network level during genesis and all subsequent signed actions.
 
 ### Membrane Proof Integrity
-- Generated server-side, typically includes agent key + timestamp + server signature.
+- Generated server-side per DNA, typically includes agent key + DNA hash + timestamp + server signature.
+- `membrane_proofs` is a map of DnaHash → base64-encoded proof. Each DNA that requires a membrane proof gets its own entry.
 - Opaque to the client (msgpack bytes, base64 for transport).
-- Validated by the DNA's `genesis_self_check` callback.
+- Each DNA's `genesis_self_check` callback validates its own proof independently.
 
 ### Transport Security
 - All endpoints must be served over HTTPS.
@@ -520,7 +591,7 @@ Client                                      Joining Service
   │◄─ { status: "ready" } ───────────────────────┤
   │                                              │
   ├─ GET /v1/join/{session}/credentials ─────────►│
-  │◄─ { linker_urls, membrane_proof } ───────────┤
+  │◄─ { linker_urls, membrane_proofs } ──────────┤
 ```
 
 ### 8.3 EVM Wallet Signing
@@ -541,7 +612,7 @@ Client                                      Joining Service
   │◄─ { status: "ready" } ───────────────────────┤
   │                                              │
   ├─ GET /v1/join/{session}/credentials ─────────►│
-  │◄─ { linker_urls, membrane_proof } ───────────┤
+  │◄─ { linker_urls, membrane_proofs } ──────────┤
 ```
 
 ### 8.4 Read-Only Gateway Before Join
@@ -563,7 +634,30 @@ Client                                      Joining Service
   ├─ [switch from http-gw to local WASM via linker]
 ```
 
-### 8.5 Multi-Step Verification (Email + KYC)
+### 8.5 Reconnect (Get Updated URLs)
+
+```
+Agent (already joined)                  Joining Service
+  │                                          │
+  │  (linker URLs expired or connectivity    │
+  │   lost, needs fresh URLs)                │
+  │                                          │
+  ├─ POST /v1/reconnect                     │
+  │  { agent_key: "uhCAk...",               │
+  │    timestamp: "2026-02-25T12:00:00Z",   │
+  │    signature: "base64..." } ────────────►│
+  │                                          │
+  │  (server verifies ed25519 signature      │
+  │   and confirms agent has joined)         │
+  │                                          │
+  │◄─ { linker_urls: ["wss://..."],         │
+  │     http_gateways: [...],               │
+  │     linker_urls_expire_at: "..." } ─────┤
+  │                                          │
+  ├─ [reconnect to new linker URLs] ────────►
+```
+
+### 8.6 Multi-Step Verification (Email + KYC)
 
 ```
 Client                                      Joining Service
@@ -591,7 +685,7 @@ Client                                      Joining Service
   │◄─ { status: "ready" } ───────────────────────┤
   │                                              │
   ├─ GET /v1/join/{session}/credentials ─────────►│
-  │◄─ { linker_urls, membrane_proof } ───────────┤
+  │◄─ { linker_urls, membrane_proofs } ──────────┤
 ```
 
 ---
@@ -690,10 +784,24 @@ interface VerifyResponse {
 
 interface JoinCredentials {
   linker_urls: string[];
-  membrane_proof?: string;
+  membrane_proofs?: Record<string, string>;
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
-  expires_at?: string;
+  linker_urls_expire_at?: string;
+}
+
+// --- /v1/reconnect ---
+
+interface ReconnectRequest {
+  agent_key: string;
+  timestamp: string;
+  signature: string;
+}
+
+interface ReconnectResponse {
+  linker_urls: string[];
+  http_gateways?: HttpGateway[];
+  linker_urls_expire_at?: string;
 }
 
 // --- Errors ---
