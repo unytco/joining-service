@@ -191,6 +191,10 @@ joining-service/
 │   │   ├── email-code.ts     # Email verification
 │   │   ├── invite-code.ts    # Pre-issued invite codes
 │   │   └── evm-signature.ts  # EVM wallet signing
+│   ├── email/
+│   │   ├── transport.ts      # EmailTransport interface
+│   │   ├── postmark.ts       # Postmark API transport (production)
+│   │   └── file.ts           # File transport (dev/testing)
 │   ├── session/
 │   │   ├── store.ts          # Session storage interface
 │   │   ├── memory-store.ts   # In-memory implementation
@@ -237,6 +241,10 @@ The reference server is configured via a JSON config file or environment variabl
     "from": "noreply@example.com",
     "template": "Your verification code is: {{code}}"
   },
+  "email_dev": {
+    "provider": "file",
+    "output_dir": "./dev-emails"
+  },
   "session": {
     "store": "memory",
     "pending_ttl_seconds": 3600,
@@ -274,6 +282,44 @@ interface AuthMethodPlugin {
 
 This allows hApp developers to add custom auth methods by implementing the plugin interface.
 
+### 3.3.1 Email transport plugin interface
+
+The email-code auth method delegates actual delivery to a transport plugin:
+
+```typescript
+interface EmailTransport {
+  send(to: string, subject: string, body: string): Promise<void>;
+}
+```
+
+Two built-in implementations:
+
+**`PostmarkTransport`** — Production. Sends via the Postmark API using the configured `api_key` and `from` address.
+
+**`FileTransport`** — Development/testing. Writes each email to a timestamped file in `output_dir`:
+
+```
+dev-emails/
+  2026-02-26T10-30-00Z_user@example.com.txt
+```
+
+File contents:
+```
+To: user@example.com
+Subject: Your Mewsfeed verification code
+Date: 2026-02-26T10:30:00Z
+
+Your verification code is: 847291
+```
+
+The code can then be copied from the file and pasted into the UI during manual testing.
+
+Transport selection is driven by `config.email.provider`:
+- `"postmark"` → `PostmarkTransport` (requires `api_key`, `from`)
+- `"file"` → `FileTransport` (requires `output_dir`, defaults to `./dev-emails`)
+
+When running tests, the config uses `"provider": "file"` so no external services are needed.
+
 ### 3.4 Membrane proof generation
 
 The reference implementation uses Ed25519 signing. The generator produces a proof per DNA, keyed by DnaHash:
@@ -299,6 +345,129 @@ The DNA's `genesis_self_check` validates by checking the signature against the s
 
 ---
 
+## Phase 4: Bundling and Deployment
+
+The joining service must be deployable alongside the hApp's web UI in two target configurations.
+
+### 4.1 Cloudflare Worker + Pages
+
+The joining service runs as a Cloudflare Worker; the hApp's web UI is deployed to Cloudflare Pages. Both share the same domain.
+
+```
+app.example.com/              → Cloudflare Pages (static UI assets)
+app.example.com/v1/*           → Cloudflare Worker (joining service API)
+app.example.com/.well-known/   → Pages or Worker (joining service discovery)
+```
+
+**Project structure additions:**
+
+```
+joining-service/
+├── deploy/
+│   ├── cloudflare/
+│   │   ├── wrangler.toml          # Worker + Pages configuration
+│   │   ├── worker-entry.ts        # Worker entrypoint (imports Hono app)
+│   │   └── README.md              # Cloudflare deployment instructions
+```
+
+**Key design decisions:**
+- Hono natively supports Cloudflare Workers — the same route handlers run without modification
+- Session storage uses Cloudflare KV (implements the `SessionStore` interface from `session/store.ts`)
+- Email transport config and signing keys stored in Worker secrets (`wrangler secret put`)
+- The `.well-known/joining-service` route is served by the Worker
+- Pages serves the static UI build output
+- Routes are split via `wrangler.toml` route patterns: `/v1/*` and `/.well-known/*` go to the Worker, everything else to Pages
+
+**New files:**
+- `src/session/kv-store.ts` — `SessionStore` implementation backed by Cloudflare KV
+- `deploy/cloudflare/worker-entry.ts` — thin wrapper that imports the Hono app and exports the Worker `fetch` handler
+
+**Build:**
+```bash
+# Build the joining service worker
+npm run build:worker    # bundles src/ into a single worker script
+
+# Deploy
+npx wrangler pages deploy ./ui-dist       # deploy UI
+npx wrangler deploy                        # deploy worker
+```
+
+### 4.2 Edge-node Docker image
+
+The joining service runs as a process alongside the Holochain conductor inside the existing edge-node Docker container (see `../edgenode`). The hApp's web UI is served by the same container via a lightweight static file server or reverse proxy.
+
+```
+edge-node container
+├── holochain conductor        (existing, port 4444)
+├── joining-service            (Node.js process, port 3000)
+├── static file server / proxy (nginx or serve, port 8080)
+│   ├── /                      → UI static assets
+│   ├── /v1/*                  → proxy to joining-service:3000
+│   └── /.well-known/*         → proxy to joining-service:3000
+```
+
+**Project structure additions:**
+
+```
+joining-service/
+├── deploy/
+│   ├── edgenode/
+│   │   ├── Dockerfile             # Multi-stage: build joining service + bundle UI
+│   │   ├── docker-compose.yml     # Compose with edgenode + joining service
+│   │   ├── nginx.conf             # Reverse proxy config (UI + API routing)
+│   │   ├── entrypoint.sh          # Starts joining service + nginx
+│   │   └── README.md              # Edge-node deployment instructions
+```
+
+**Key design decisions:**
+- Follows the edge-node pattern: Wolfi-base image, non-root user (UID 65532), tini for process supervision, persistent data under `/data`
+- Session storage uses the in-memory store (single-node deployment; sufficient for edge-node scale)
+- The joining service config file lives in `/data/joining-service/config.json`, persisted across container restarts
+- The signing key is generated on first boot and stored in `/data/joining-service/signing-key.pem`
+- nginx handles TLS termination (if needed) and routes `/v1/*` and `/.well-known/*` to the joining service, everything else to static UI files
+- The hApp config JSON (same format as edge-node's `install_happ` tool) can reference the joining service URL so the hApp is installed with the correct joining service endpoint
+
+**Docker build:**
+```dockerfile
+# Stage 1: Build joining service
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY joining-service/ .
+RUN npm ci && npm run build
+
+# Stage 2: Runtime
+FROM cgr.dev/chainguard/wolfi-base
+COPY --from=builder /app/dist /opt/joining-service
+COPY deploy/edgenode/nginx.conf /etc/nginx/
+COPY deploy/edgenode/entrypoint.sh /usr/local/bin/
+# ... nginx, node runtime, tini
+EXPOSE 8080
+ENTRYPOINT ["tini", "--", "entrypoint.sh"]
+```
+
+**Integration with edge-node:**
+- Can be composed alongside the existing edge-node container via `docker-compose.yml`, or built as a single extended image that adds the joining service layer on top of the edge-node base
+- The `happ_config_file` tool (from `../edgenode/tools/`) can be extended to include a `joiningService` section pointing to the co-located joining service
+
+### 4.3 Shared build concerns
+
+Both deployment targets share:
+- The same Hono application code (no target-specific route logic)
+- The same `AuthMethodPlugin` and `EmailTransport` interfaces
+- The same config schema — only `session.store` and `email.provider` differ per target
+- A single `npm run build` that produces a Node.js bundle; the Cloudflare worker entrypoint re-exports it for the Workers runtime
+
+**Config differences by target:**
+
+| Setting | Cloudflare | Edge-node |
+|---------|-----------|-----------|
+| `session.store` | `"cloudflare-kv"` | `"memory"` |
+| `email.provider` | `"postmark"` | `"postmark"` or `"file"` |
+| Secrets management | `wrangler secret` | Config file or env vars |
+| TLS | Cloudflare edge | nginx or external LB |
+
+---
+
 ## Phase Ordering and Dependencies
 
 ```
@@ -310,9 +479,13 @@ Phase 1.1 (JoiningClient)             ──► Phase 1.3 (WebConductorAppClient
 Phase 1.2 (dnaModifiers type)         ──► Phase 1.3
 
 Phase 3.1-3.4 (Reference Server)      ──► Integration testing
+                                       ──► Phase 4 (Deployment)
+
+Phase 4.1 (Cloudflare)                ──  requires Phase 3 complete
+Phase 4.2 (Edge-node Docker)           ──  requires Phase 3 complete
 ```
 
-Phase 2 is done. Phase 1.1 and Phase 3 can proceed in parallel. Phase 1.3 depends on 1.1 completing. Phase 1.2 is a small type addition that can be done alongside 1.1.
+Phase 2 is done. Phase 1.1 and Phase 3 can proceed in parallel. Phase 1.3 depends on 1.1 completing. Phase 1.2 is a small type addition that can be done alongside 1.1. Phase 4 (both deployment targets) depends on Phase 3 completing, since it packages the built service. Phase 4.1 and 4.2 can proceed in parallel.
 
 ---
 
@@ -329,10 +502,28 @@ Phase 2 is done. Phase 1.1 and Phase 3 can proceed in parallel. Phase 1.3 depend
 ### Integration Tests
 - Reference server + `JoiningClient`: End-to-end join flow
 - Open auth: join → credentials in 2 calls
-- Email auth: join → verify → credentials
+- Email auth: join → verify → credentials (see below)
 - Invite code: join with valid/invalid code
 - Reconnect: join → use credentials → reconnect with signature → receive updated URLs
 - Reconnect after expiry: verify client gets fresh linker URLs with new `linker_urls_expire_at`
+
+#### Email verification flow testing
+
+All email tests use `"provider": "file"` so no Postmark credentials or network access are needed. The test flow:
+
+1. Start the server with config `{ email: { provider: "file", output_dir: tmpDir } }`
+2. `POST /v1/join` with `{ agent_key, claims: { email: "test@example.com" } }` → returns session with `status: "pending"` and a challenge of type `email_code`
+3. Read the verification code from the file written to `tmpDir` (glob for `*test@example.com.txt`, parse the code from the body)
+4. `POST /v1/join/:session/verify` with the extracted code → session transitions to `status: "ready"`
+5. `GET /v1/join/:session/credentials` → returns membrane proofs and linker URLs
+
+Additional email test cases:
+- **Wrong code**: verify with an incorrect code → returns error, session stays `pending`
+- **Expired code**: advance time past code TTL → verify returns error
+- **Resend**: call join again with the same email → new code written to a new file, old code invalidated
+- **Rate limiting**: rapid verify attempts → returns 429
+
+For **manual QA / demo testing**, run the server with `"provider": "file"` and `output_dir` set to a convenient location. The tester opens the UI, enters their email, then checks the output directory for the file containing their code.
 
 ### E2E Tests
 - Full browser flow: extension + joining service + linker
