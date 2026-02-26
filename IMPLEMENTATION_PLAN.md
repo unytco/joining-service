@@ -1,7 +1,7 @@
 # Joining Service Implementation Plan
 
 **Date**: 2026-02-24
-**Status**: Draft
+**Status**: In Progress
 
 ## Overview
 
@@ -167,54 +167,59 @@ The joining service integration will use the one-step flow: credentials are obta
 
 ---
 
-## Phase 3: Reference Joining Service
+## Phase 3: Reference Joining Service — DONE
 
-### 3.1 Project setup
+### 3.1 Project setup — DONE
 
-**New package**: `joining-service/` (this directory, sibling to `holo-web-conductor/`)
+**Package**: `joining-service/` (this directory, sibling to `holo-web-conductor/`)
 
-Technology: Node.js + Hono (lightweight, runs on Cloudflare Workers, Node, Deno, Bun). Alternative: Express for familiarity.
+Technology: Node.js + Hono + vitest. All routes are co-located in `app.ts` (using the Hono app factory pattern) rather than separate route files, since they share the same `ServiceContext`. CORS is handled by Hono's built-in `cors()` middleware.
 
 ```
 joining-service/
 ├── src/
-│   ├── index.ts              # Server entry, route registration
-│   ├── routes/
-│   │   ├── info.ts           # GET /v1/info
-│   │   ├── join.ts           # POST /v1/join
-│   │   ├── verify.ts         # POST /v1/join/:session/verify
-│   │   ├── status.ts         # GET /v1/join/:session/status
-│   │   ├── credentials.ts    # GET /v1/join/:session/credentials
-│   │   └── reconnect.ts      # POST /v1/reconnect
+│   ├── index.ts              # Public API exports
+│   ├── app.ts                # Hono app factory, all route handlers
+│   ├── server.ts             # CLI entry point, wires config → plugins → app
+│   ├── config.ts             # ServiceConfig type + resolveConfig()
+│   ├── types.ts              # All API types from JOINING_SERVICE_API.md
+│   ├── utils.ts              # Session ID generation, agent key validation, base64
 │   ├── auth-methods/
-│   │   ├── open.ts           # No-op auth
-│   │   ├── email-code.ts     # Email verification
-│   │   ├── invite-code.ts    # Pre-issued invite codes
-│   │   └── evm-signature.ts  # EVM wallet signing
+│   │   ├── plugin.ts         # AuthMethodPlugin interface
+│   │   ├── open.ts           # No-op auth (instant ready)
+│   │   ├── email-code.ts     # 6-digit code via EmailTransport
+│   │   └── invite-code.ts    # Single-use invite codes
 │   ├── email/
 │   │   ├── transport.ts      # EmailTransport interface
 │   │   ├── postmark.ts       # Postmark API transport (production)
 │   │   └── file.ts           # File transport (dev/testing)
 │   ├── session/
-│   │   ├── store.ts          # Session storage interface
-│   │   ├── memory-store.ts   # In-memory implementation
-│   │   └── redis-store.ts    # Redis implementation (optional)
-│   ├── membrane-proof/
-│   │   ├── generator.ts      # Membrane proof generation interface
-│   │   └── ed25519-signer.ts # Simple Ed25519-based proof generator
-│   ├── config.ts             # Service configuration
-│   └── middleware/
-│       ├── cors.ts
-│       └── rate-limit.ts
+│   │   ├── store.ts          # SessionStore interface + ChallengeState
+│   │   ├── memory-store.ts   # In-memory implementation with TTL
+│   │   └── sqlite-store.ts   # SQLite implementation (persists across restarts)
+│   └── membrane-proof/
+│       ├── generator.ts      # MembraneProofGenerator interface
+│       └── ed25519-signer.ts # Ed25519 signing + msgpack encoding
 ├── test/
-│   ├── open-join.test.ts
-│   ├── email-verification.test.ts
-│   ├── invite-code.test.ts
-│   └── reconnect.test.ts
+│   ├── helpers.ts            # createTestApp(), fakeAgentKey()
+│   ├── open-join.test.ts     # 9 tests
+│   ├── email-verification.test.ts  # 7 tests
+│   ├── invite-code.test.ts   # 5 tests
+│   ├── reconnect.test.ts     # 5 tests
+│   └── sqlite-store.test.ts  # 11 tests
 ├── package.json
-├── tsconfig.json
-└── README.md
+└── tsconfig.json
 ```
+
+**Implementation notes vs. original plan:**
+- Routes are in `src/app.ts` instead of separate `src/routes/*.ts` files — the `createApp(ctx)` factory pattern keeps all route handlers together with shared access to the `ServiceContext`
+- No separate `middleware/` directory — CORS uses Hono's built-in `cors()`, rate limiting is per-challenge (attempt counter on `ChallengeState`)
+- `evm-signature.ts` auth method not yet implemented (only open, email_code, invite_code are done)
+- `sqlite-store.ts` added for persistent sessions across restarts (uses `better-sqlite3`, WAL mode, JSON serialization for challenges/claims)
+- Config supports `session.store: "memory" | "sqlite"` with optional `session.db_path`
+- The `expected_code` for email verification is stored in `challenge.metadata` server-side and stripped via `stripInternal()` before sending responses to clients
+- Agent key validation checks the 3-byte HoloHash prefix (0x84, 0x20, 0x24) and 39-byte length
+- Reconnect extracts the 32-byte ed25519 public key from bytes 3–35 of the 39-byte AgentPubKey
 
 ### 3.2 Configuration
 
@@ -246,7 +251,8 @@ The reference server is configured via a JSON config file or environment variabl
     "output_dir": "./dev-emails"
   },
   "session": {
-    "store": "memory",
+    "store": "sqlite",
+    "db_path": "./data/sessions.db",
     "pending_ttl_seconds": 3600,
     "ready_ttl_seconds": 86400
   },
@@ -461,7 +467,7 @@ Both deployment targets share:
 
 | Setting | Cloudflare | Edge-node |
 |---------|-----------|-----------|
-| `session.store` | `"cloudflare-kv"` | `"memory"` |
+| `session.store` | `"cloudflare-kv"` | `"sqlite"` (persists across restarts) |
 | `email.provider` | `"postmark"` | `"postmark"` or `"file"` |
 | Secrets management | `wrangler secret` | Config file or env vars |
 | TLS | Cloudflare edge | nginx or external LB |
@@ -472,20 +478,22 @@ Both deployment targets share:
 
 ```
 Phase 2 (Extension plumbing)           ──  COMPLETE
+Phase 3.1-3.4 (Reference Server)      ──  COMPLETE (37 tests passing)
 
 Phase 1.1 (JoiningClient)             ──► Phase 1.3 (WebConductorAppClient)
-                                       ──► Phase 3 (Reference Server)
 
 Phase 1.2 (dnaModifiers type)         ──► Phase 1.3
 
-Phase 3.1-3.4 (Reference Server)      ──► Integration testing
-                                       ──► Phase 4 (Deployment)
-
-Phase 4.1 (Cloudflare)                ──  requires Phase 3 complete
-Phase 4.2 (Edge-node Docker)           ──  requires Phase 3 complete
+Phase 4.1 (Cloudflare)                ──  ready to start
+Phase 4.2 (Edge-node Docker)           ──  ready to start
 ```
 
-Phase 2 is done. Phase 1.1 and Phase 3 can proceed in parallel. Phase 1.3 depends on 1.1 completing. Phase 1.2 is a small type addition that can be done alongside 1.1. Phase 4 (both deployment targets) depends on Phase 3 completing, since it packages the built service. Phase 4.1 and 4.2 can proceed in parallel.
+Phase 2 is done. Phase 3 is done (core server with open, email_code, and invite_code auth methods; memory + SQLite session stores; 37 tests passing). Phase 1.1 can proceed now. Phase 1.3 depends on 1.1 completing. Phase 1.2 is a small type addition that can be done alongside 1.1. Phase 4 (both deployment targets) can now start since Phase 3 is complete. Phase 4.1 and 4.2 can proceed in parallel.
+
+**Remaining work:**
+- Phase 1: HWC client library (JoiningClient, WebConductorAppClient integration)
+- Phase 3 stretch: evm_signature auth method
+- Phase 4: Cloudflare Worker + edge-node Docker deployment configs
 
 ---
 
@@ -549,3 +557,21 @@ For **manual QA / demo testing**, run the server with `"provider": "file"` and `
 | `packages/core/src/ribosome/genesis-self-check.ts` | 2.2 | DONE | runGenesisSelfCheck passes proof to WASM |
 | `packages/core/src/storage/types.ts` | 2.3 | DONE | AgentValidationPkgAction.membraneProof, StorableAction serialization |
 | `packages/extension/src/lib/messaging.ts` | 2.4 | DONE | PROVIDE_MEMPROOFS message type + payload |
+| `joining-service/src/app.ts` | 3.1 | DONE | Hono app factory with all 6 API route handlers |
+| `joining-service/src/server.ts` | 3.1 | DONE | CLI entry point, config → plugins → app wiring |
+| `joining-service/src/config.ts` | 3.2 | DONE | ServiceConfig type + resolveConfig() with defaults |
+| `joining-service/src/types.ts` | 3.1 | DONE | All API types from JOINING_SERVICE_API.md |
+| `joining-service/src/utils.ts` | 3.1 | DONE | Session ID generation, agent key validation, base64 |
+| `joining-service/src/auth-methods/plugin.ts` | 3.3 | DONE | AuthMethodPlugin interface |
+| `joining-service/src/auth-methods/open.ts` | 3.3 | DONE | No-op auth, instant ready |
+| `joining-service/src/auth-methods/email-code.ts` | 3.3 | DONE | 6-digit code via EmailTransport, code masking |
+| `joining-service/src/auth-methods/invite-code.ts` | 3.3 | DONE | Single-use invite code validation |
+| `joining-service/src/email/transport.ts` | 3.3.1 | DONE | EmailTransport interface |
+| `joining-service/src/email/file.ts` | 3.3.1 | DONE | FileTransport (timestamped files for dev/testing) |
+| `joining-service/src/email/postmark.ts` | 3.3.1 | DONE | PostmarkTransport (production API) |
+| `joining-service/src/session/store.ts` | 3.1 | DONE | SessionStore interface + ChallengeState type |
+| `joining-service/src/session/memory-store.ts` | 3.1 | DONE | In-memory store with TTL expiration |
+| `joining-service/src/session/sqlite-store.ts` | 3.1 | DONE | SQLite store (better-sqlite3, WAL mode, persists across restarts) |
+| `joining-service/src/membrane-proof/generator.ts` | 3.4 | DONE | MembraneProofGenerator interface |
+| `joining-service/src/membrane-proof/ed25519-signer.ts` | 3.4 | DONE | Ed25519 signing + msgpack proof encoding |
+| `joining-service/src/index.ts` | 3.1 | DONE | Public API exports |
