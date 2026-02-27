@@ -1,0 +1,16 @@
+// Client classes
+export { JoiningClient, JoinSession, JoiningError } from './joining.js';
+export { GatewayProxy, GatewayError, type GatewayCallZomeParams } from './gateway-proxy.js';
+
+// Re-export shared API types that client consumers need
+export type {
+  WellKnownHoloJoining,
+  JoiningServiceInfo,
+  HttpGateway,
+  AuthMethod,
+  DnaModifiers,
+  Challenge,
+  JoinCredentials,
+  ReconnectRequest,
+  ReconnectResponse,
+} from '../types.js';

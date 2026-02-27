@@ -29,3 +29,13 @@ export * from './types.js';
 
 // Utilities
 export { validateAgentKey, generateSessionId, toBase64, fromBase64 } from './utils.js';
+
+// Client library (also available as '@holo-host/joining-service/client')
+export {
+  JoiningClient,
+  JoinSession,
+  JoiningError,
+  GatewayProxy,
+  GatewayError,
+} from './client/index.js';
+export type { GatewayCallZomeParams } from './client/index.js';
