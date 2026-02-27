@@ -22,7 +22,7 @@ export { PostmarkTransport } from './email/postmark.js';
 
 // Membrane proof
 export type { MembraneProofGenerator } from './membrane-proof/generator.js';
-export { Ed25519ProofGenerator } from './membrane-proof/ed25519-signer.js';
+export { LairProofGenerator } from './membrane-proof/lair-signer.js';
 
 // Types
 export * from './types.js';

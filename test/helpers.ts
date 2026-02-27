@@ -7,7 +7,8 @@ import { OpenAuthMethod } from '../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../src/auth-methods/invite-code.js';
 import { FileTransport } from '../src/email/file.js';
-import { Ed25519ProofGenerator } from '../src/membrane-proof/ed25519-signer.js';
+import { randomBytes } from 'node:crypto';
+import { LairProofGenerator } from '../src/membrane-proof/lair-signer.js';
 import type { AuthMethodPlugin } from '../src/auth-methods/plugin.js';
 import type { Hono } from 'hono';
 
@@ -98,10 +99,9 @@ export async function createTestApp(
     }
   }
 
-  let proofGenerator: Ed25519ProofGenerator | undefined;
+  let proofGenerator: LairProofGenerator | undefined;
   if (config.membrane_proof?.enabled) {
-    const { privateKey } = await Ed25519ProofGenerator.generateKeyPair();
-    proofGenerator = new Ed25519ProofGenerator(privateKey);
+    proofGenerator = await LairProofGenerator.fromSeed(randomBytes(32));
   }
 
   const ctx: ServiceContext = {

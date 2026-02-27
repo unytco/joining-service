@@ -12,7 +12,8 @@ import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
 import { PostmarkTransport } from '../../src/email/postmark.js';
-import { Ed25519ProofGenerator } from '../../src/membrane-proof/ed25519-signer.js';
+import { LairProofGenerator } from '../../src/membrane-proof/lair-signer.js';
+import type { MembraneProofGenerator } from '../../src/membrane-proof/generator.js';
 import type { AuthMethodPlugin } from '../../src/auth-methods/plugin.js';
 import type { EmailTransport } from '../../src/email/transport.js';
 
@@ -83,13 +84,9 @@ function buildAuthPlugins(
 
 async function buildProofGenerator(
   signingKeyHex?: string,
-): Promise<Ed25519ProofGenerator | undefined> {
+): Promise<MembraneProofGenerator | undefined> {
   if (!signingKeyHex) return undefined;
-
-  const privateKey = new Uint8Array(
-    signingKeyHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)),
-  );
-  return new Ed25519ProofGenerator(privateKey);
+  return LairProofGenerator.fromHex(signingKeyHex);
 }
 
 export default {
@@ -109,7 +106,7 @@ export default {
     const emailTransport = buildEmailTransport(config);
     const authPlugins = buildAuthPlugins(config, emailTransport);
 
-    let proofGenerator: Ed25519ProofGenerator | undefined;
+    let proofGenerator: MembraneProofGenerator | undefined;
     if (config.membrane_proof?.enabled) {
       proofGenerator = await buildProofGenerator(env.SIGNING_KEY_HEX);
     }

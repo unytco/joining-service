@@ -10,7 +10,8 @@ import { EmailCodeAuthMethod } from './auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from './auth-methods/invite-code.js';
 import { FileTransport } from './email/file.js';
 import { PostmarkTransport } from './email/postmark.js';
-import { Ed25519ProofGenerator } from './membrane-proof/ed25519-signer.js';
+import { LairProofGenerator } from './membrane-proof/lair-signer.js';
+import type { MembraneProofGenerator } from './membrane-proof/generator.js';
 import type { AuthMethodPlugin } from './auth-methods/plugin.js';
 import type { EmailTransport } from './email/transport.js';
 
@@ -78,7 +79,7 @@ function buildAuthPlugins(
 
 async function buildProofGenerator(
   config: ServiceConfig,
-): Promise<Ed25519ProofGenerator | undefined> {
+): Promise<MembraneProofGenerator | undefined> {
   if (!config.membrane_proof?.enabled) return undefined;
 
   if (config.membrane_proof.signing_key_path) {
@@ -86,15 +87,12 @@ async function buildProofGenerator(
       config.membrane_proof.signing_key_path,
       'utf-8',
     ).trim();
-    const privateKey = new Uint8Array(
-      Buffer.from(keyHex, 'hex'),
-    );
-    return new Ed25519ProofGenerator(privateKey);
+    return LairProofGenerator.fromHex(keyHex);
   }
 
   // Generate ephemeral key for dev
-  const { privateKey } = await Ed25519ProofGenerator.generateKeyPair();
-  return new Ed25519ProofGenerator(privateKey);
+  const { randomBytes } = await import('node:crypto');
+  return LairProofGenerator.fromSeed(randomBytes(32));
 }
 
 function buildSessionStore(config: ServiceConfig): SessionStore {
