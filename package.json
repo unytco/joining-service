@@ -21,7 +21,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen-signing-key": "NODE_OPTIONS=--preserve-symlinks tsx scripts/gen-signing-key.ts"
   },
   "dependencies": {
     "@holo-host/lair": "file:../holo-web-conductor/packages/lair",
