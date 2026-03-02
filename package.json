@@ -10,6 +10,7 @@
       "types": "./dist/index.d.ts"
     },
     "./client": {
+      "source": "./src/client/index.ts",
       "import": "./dist/client/index.js",
       "types": "./dist/client/index.d.ts"
     }
