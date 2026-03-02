@@ -11,7 +11,9 @@ import {
   validateAgentKey,
   toBase64,
   fromBase64,
+  agentKeyToRawEd25519Base64url,
 } from './utils.js';
+import type { HcAuthClient } from './hc-auth/index.js';
 import * as ed from '@noble/ed25519';
 
 export interface ServiceContext {
@@ -20,6 +22,22 @@ export interface ServiceContext {
   authPlugins: Map<string, AuthMethodPlugin>;
   proofGenerator?: MembraneProofGenerator;
   urlProvider: UrlProvider;
+  hcAuthClient?: HcAuthClient;
+}
+
+async function notifyHcAuth(
+  ctx: ServiceContext,
+  agentKey: string,
+): Promise<void> {
+  if (!ctx.hcAuthClient) return;
+  const rawKey = agentKeyToRawEd25519Base64url(agentKey);
+  const metadata = { agent_key: agentKey, happ_id: ctx.config.happ.id };
+  try {
+    await ctx.hcAuthClient.registerAndAuthorize(rawKey, metadata);
+  } catch (err) {
+    if (ctx.config.hc_auth?.required) throw err;
+    console.error('[hc-auth] registerAndAuthorize failed (non-fatal):', err);
+  }
 }
 
 function errorJson(code: string, message: string, status: number) {
@@ -167,6 +185,10 @@ export function createApp(ctx: ServiceContext): Hono {
     const allCompleted = allChallenges.every((cs) => cs.completed);
     const finalStatus = allCompleted ? 'ready' : status;
 
+    if (finalStatus === 'ready') {
+      await notifyHcAuth(ctx, agent_key);
+    }
+
     await ctx.sessionStore.create({
       id: sessionId,
       agent_key,
@@ -279,6 +301,10 @@ export function createApp(ctx: ServiceContext): Hono {
       status: newStatus,
       challenges: session.challenges,
     });
+
+    if (newStatus === 'ready') {
+      await notifyHcAuth(ctx, session.agent_key);
+    }
 
     const resp: Record<string, unknown> = { status: newStatus };
     if (newStatus === 'pending') {

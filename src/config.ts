@@ -1,4 +1,5 @@
 import type { AuthMethod, DnaModifiers } from './types.js';
+import type { HcAuthConfig } from './hc-auth/index.js';
 
 export interface ServiceConfig {
   happ: {
@@ -39,6 +40,7 @@ export interface ServiceConfig {
     timestamp_tolerance_seconds?: number;
   };
   port?: number;
+  hc_auth?: HcAuthConfig;
 }
 
 const DEFAULTS = {

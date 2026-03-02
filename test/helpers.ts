@@ -12,6 +12,7 @@ import { LairProofGenerator } from '../src/membrane-proof/lair-signer.js';
 import { StaticUrlProvider } from '../src/urls/static.js';
 import type { UrlProvider } from '../src/urls/provider.js';
 import type { AuthMethodPlugin } from '../src/auth-methods/plugin.js';
+import type { HcAuthClient } from '../src/hc-auth/index.js';
 import type { Hono } from 'hono';
 
 // A minimal valid 39-byte AgentPubKey, base64-encoded.
@@ -38,6 +39,7 @@ export async function createTestApp(
   configOverrides: Partial<ServiceConfig> = {},
   pluginOverrides?: Map<string, AuthMethodPlugin>,
   urlProvider?: UrlProvider,
+  hcAuthClient?: HcAuthClient,
 ): Promise<TestApp> {
   const defaults: Partial<ServiceConfig> = {
     happ: {
@@ -114,6 +116,7 @@ export async function createTestApp(
     authPlugins,
     proofGenerator,
     urlProvider: resolvedUrlProvider,
+    hcAuthClient,
   };
 
   const app = createApp(ctx);
