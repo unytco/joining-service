@@ -1,4 +1,4 @@
-import type { AuthMethod, DnaModifiers, HttpGateway } from './types.js';
+import type { AuthMethod, DnaModifiers } from './types.js';
 
 export interface ServiceConfig {
   happ: {
@@ -9,12 +9,10 @@ export interface ServiceConfig {
     happ_bundle_url?: string;
   };
   auth_methods: AuthMethod[];
-  linker_urls?: string[];
   linker_info?: {
     selection_mode: 'assigned' | 'client_choice';
     region_hints?: string[];
   };
-  http_gateways?: HttpGateway[];
   dna_hashes?: string[];
   dna_modifiers?: DnaModifiers;
   membrane_proof?: {
@@ -68,7 +66,6 @@ export function resolveConfig(partial: Partial<ServiceConfig>): ServiceConfig {
     ...partial,
     happ: partial.happ,
     auth_methods: partial.auth_methods,
-    linker_urls: partial.linker_urls,
     session: { ...DEFAULTS.session, ...partial.session },
     reconnect: { ...DEFAULTS.reconnect, ...partial.reconnect },
     port: partial.port ?? DEFAULTS.port,

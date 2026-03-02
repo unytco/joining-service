@@ -97,10 +97,6 @@ async function buildProofGenerator(
   return LairProofGenerator.fromSeed(randomBytes(32));
 }
 
-function buildUrlProvider(config: ServiceConfig): UrlProvider {
-  return new StaticUrlProvider(config.linker_urls, config.http_gateways);
-}
-
 function buildSessionStore(config: ServiceConfig): SessionStore {
   const pendingTtl = config.session!.pending_ttl_seconds;
   const readyTtl = config.session!.ready_ttl_seconds;
@@ -115,6 +111,7 @@ function buildSessionStore(config: ServiceConfig): SessionStore {
 
 export async function startServer(
   configInput: Partial<ServiceConfig>,
+  urlProvider?: UrlProvider,
 ): Promise<ReturnType<typeof serve>> {
   const config = resolveConfig(configInput);
 
@@ -124,14 +121,14 @@ export async function startServer(
   const authPlugins = buildAuthPlugins(config, emailTransport);
   const proofGenerator = await buildProofGenerator(config);
 
-  const urlProvider = buildUrlProvider(config);
+  const resolvedUrlProvider = urlProvider ?? new StaticUrlProvider();
 
   const context: ServiceContext = {
     config,
     sessionStore,
     authPlugins,
     proofGenerator,
-    urlProvider,
+    urlProvider: resolvedUrlProvider,
   };
 
   const app = createApp(context);
@@ -149,8 +146,9 @@ export async function startServer(
 const configPath = process.argv[2] ?? './config.json';
 try {
   const raw = readFileSync(configPath, 'utf-8');
-  const configInput = JSON.parse(raw);
-  startServer(configInput);
+  const { linker_urls, http_gateways, ...configInput } = JSON.parse(raw);
+  const urlProvider = new StaticUrlProvider(linker_urls, http_gateways);
+  startServer(configInput, urlProvider);
 } catch (e: unknown) {
   const message = e instanceof Error ? e.message : String(e);
   console.error(`Failed to start: ${message}`);

@@ -10,6 +10,7 @@ import { FileTransport } from '../src/email/file.js';
 import { randomBytes } from 'node:crypto';
 import { LairProofGenerator } from '../src/membrane-proof/lair-signer.js';
 import { StaticUrlProvider } from '../src/urls/static.js';
+import type { UrlProvider } from '../src/urls/provider.js';
 import type { AuthMethodPlugin } from '../src/auth-methods/plugin.js';
 import type { Hono } from 'hono';
 
@@ -36,6 +37,7 @@ export interface TestApp {
 export async function createTestApp(
   configOverrides: Partial<ServiceConfig> = {},
   pluginOverrides?: Map<string, AuthMethodPlugin>,
+  urlProvider?: UrlProvider,
 ): Promise<TestApp> {
   const defaults: Partial<ServiceConfig> = {
     happ: {
@@ -44,7 +46,6 @@ export async function createTestApp(
       happ_bundle_url: 'https://example.com/test.happ',
     },
     auth_methods: ['open'],
-    linker_urls: ['wss://linker.example.com:8090'],
     session: { store: 'memory', pending_ttl_seconds: 3600, ready_ttl_seconds: 86400 },
   };
 
@@ -105,14 +106,14 @@ export async function createTestApp(
     proofGenerator = await LairProofGenerator.fromSeed(randomBytes(32));
   }
 
-  const urlProvider = new StaticUrlProvider(config.linker_urls, config.http_gateways);
+  const resolvedUrlProvider = urlProvider ?? new StaticUrlProvider(['wss://linker.example.com:8090']);
 
   const ctx: ServiceContext = {
     config,
     sessionStore,
     authPlugins,
     proofGenerator,
-    urlProvider,
+    urlProvider: resolvedUrlProvider,
   };
 
   const app = createApp(ctx);

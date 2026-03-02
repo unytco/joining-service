@@ -29,7 +29,6 @@ const DEFAULT_CONFIG: Partial<ServiceConfig> = {
     happ_bundle_url: 'https://example.com/test.happ',
   },
   auth_methods: ['open'],
-  linker_urls: ['wss://linker.example.com:8090'],
   session: { store: 'memory', pending_ttl_seconds: 3600, ready_ttl_seconds: 86400 },
 };
 
@@ -78,7 +77,7 @@ export async function startE2EServer(
     proofGenerator = await LairProofGenerator.fromSeed(randomBytes(32));
   }
 
-  const urlProvider = new StaticUrlProvider(config.linker_urls, config.http_gateways);
+  const urlProvider = new StaticUrlProvider(['wss://linker.example.com:8090']);
 
   const ctx: ServiceContext = {
     config,
