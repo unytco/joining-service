@@ -55,8 +55,7 @@ describe('Reconnect flow', () => {
 
     expect(reconnRes.status).toBe(200);
     const body = await reconnRes.json();
-    expect(body.linker_urls).toEqual(['wss://linker.example.com:8090']);
-    expect(body.linker_urls_expire_at).toBeDefined();
+    expect(body.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090' }]);
   });
 
   it('reconnect with invalid signature returns 400', async () => {

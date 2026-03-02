@@ -14,6 +14,8 @@ import { LairProofGenerator } from './membrane-proof/lair-signer.js';
 import type { MembraneProofGenerator } from './membrane-proof/generator.js';
 import type { AuthMethodPlugin } from './auth-methods/plugin.js';
 import type { EmailTransport } from './email/transport.js';
+import { StaticUrlProvider } from './urls/static.js';
+import type { UrlProvider } from './urls/provider.js';
 
 function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
   if (!config.email) return null;
@@ -95,6 +97,10 @@ async function buildProofGenerator(
   return LairProofGenerator.fromSeed(randomBytes(32));
 }
 
+function buildUrlProvider(config: ServiceConfig): UrlProvider {
+  return new StaticUrlProvider(config.linker_urls, config.http_gateways);
+}
+
 function buildSessionStore(config: ServiceConfig): SessionStore {
   const pendingTtl = config.session!.pending_ttl_seconds;
   const readyTtl = config.session!.ready_ttl_seconds;
@@ -118,11 +124,14 @@ export async function startServer(
   const authPlugins = buildAuthPlugins(config, emailTransport);
   const proofGenerator = await buildProofGenerator(config);
 
+  const urlProvider = buildUrlProvider(config);
+
   const context: ServiceContext = {
     config,
     sessionStore,
     authPlugins,
     proofGenerator,
+    urlProvider,
   };
 
   const app = createApp(context);

@@ -55,7 +55,7 @@ describe('E2E: Email verification flow', () => {
 
     // Get provision
     const creds = await verified.getProvision();
-    expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
+    expect(creds.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090' }]);
   });
 
   it('pollStatus shows pending until verified', async () => {

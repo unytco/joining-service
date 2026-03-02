@@ -187,8 +187,7 @@ describe('JoiningClient', () => {
 
       mockFetch.mockResolvedValueOnce(
         jsonResponse({
-          linker_urls: ['wss://new-linker.example.com:8090'],
-          linker_urls_expire_at: '2026-03-01T00:00:00Z',
+          linker_urls: [{ url: 'wss://new-linker.example.com:8090', expires_at: '2026-03-01T00:00:00Z' }],
         }),
       );
 
@@ -201,7 +200,7 @@ describe('JoiningClient', () => {
       expect(typeof timestamp).toBe('string');
       expect(new Date(timestamp).getTime()).not.toBeNaN();
 
-      expect(result.linker_urls).toEqual(['wss://new-linker.example.com:8090']);
+      expect(result.linker_urls).toEqual([{ url: 'wss://new-linker.example.com:8090', expires_at: '2026-03-01T00:00:00Z' }]);
     });
 
     it('throws on agent_not_joined', async () => {
@@ -323,10 +322,9 @@ describe('JoinSession', () => {
     it('returns provision when ready', async () => {
       mockFetch.mockResolvedValueOnce(
         jsonResponse({
-          linker_urls: ['wss://linker.example.com:8090'],
+          linker_urls: [{ url: 'wss://linker.example.com:8090', expires_at: '2026-03-01T00:00:00Z' }],
           membrane_proofs: { 'uhC0kDna1': 'base64proof' },
           happ_bundle_url: 'https://example.com/test.happ',
-          linker_urls_expire_at: '2026-03-01T00:00:00Z',
         }),
       );
 
@@ -336,7 +334,7 @@ describe('JoinSession', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         `${TEST_BASE_URL}/join/js_creds/provision`,
       );
-      expect(provision.linker_urls).toEqual(['wss://linker.example.com:8090']);
+      expect(provision.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090', expires_at: '2026-03-01T00:00:00Z' }]);
       expect(provision.membrane_proofs).toEqual({ 'uhC0kDna1': 'base64proof' });
     });
 

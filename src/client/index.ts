@@ -7,6 +7,7 @@ export type {
   WellKnownHoloJoining,
   JoiningServiceInfo,
   HttpGateway,
+  LinkerUrl,
   AuthMethod,
   DnaModifiers,
   Challenge,

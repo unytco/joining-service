@@ -3,6 +3,11 @@ export { createApp, type ServiceContext } from './app.js';
 export { resolveConfig, type ServiceConfig } from './config.js';
 export { startServer } from './server.js';
 
+// URL providers
+export type { UrlProvider } from './urls/provider.js';
+export { StaticUrlProvider } from './urls/static.js';
+export { KvUrlProvider, type KVNamespace as UrlKVNamespace } from './urls/kv.js';
+
 // Session
 export type { SessionStore, SessionData, ChallengeState } from './session/store.js';
 export { MemorySessionStore } from './session/memory-store.js';

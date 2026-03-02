@@ -28,6 +28,15 @@ export interface HttpGateway {
   url: string;
   dna_hashes: string[];
   status: 'available' | 'degraded' | 'offline';
+  /** When this gateway entry expires. Absent means no known expiry. */
+  expires_at?: string;
+}
+
+/** A linker WebSocket URL with an optional per-URL expiration. */
+export interface LinkerUrl {
+  url: string;
+  /** When this linker URL reservation expires. Absent means no known expiry. */
+  expires_at?: string;
 }
 
 export type AuthMethod =
@@ -79,10 +88,8 @@ export interface VerifyResponse {
 }
 
 export interface JoinProvision {
-  /** Absent when the service does not manage linker relay URLs. */
-  linker_urls?: string[];
-  /** Absent when linker_urls is absent or expiry does not apply. */
-  linker_urls_expire_at?: string;
+  /** Absent when the service does not manage linker relay URLs. Each entry may carry its own expiry. */
+  linker_urls?: LinkerUrl[];
   membrane_proofs?: Record<string, string>;
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
@@ -95,10 +102,8 @@ export interface ReconnectRequest {
 }
 
 export interface ReconnectResponse {
-  /** Absent when the service does not manage linker relay URLs. */
-  linker_urls?: string[];
-  /** Absent when linker_urls is absent. */
-  linker_urls_expire_at?: string;
+  /** Absent when the service does not manage linker relay URLs. Each entry may carry its own expiry. */
+  linker_urls?: LinkerUrl[];
   http_gateways?: HttpGateway[];
 }
 

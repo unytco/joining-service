@@ -4,6 +4,7 @@ import type { ServiceConfig } from './config.js';
 import type { AuthMethodPlugin } from './auth-methods/plugin.js';
 import type { SessionStore, ChallengeState } from './session/store.js';
 import type { MembraneProofGenerator } from './membrane-proof/generator.js';
+import type { UrlProvider } from './urls/provider.js';
 import type { Challenge } from './types.js';
 import {
   generateSessionId,
@@ -18,6 +19,7 @@ export interface ServiceContext {
   sessionStore: SessionStore;
   authPlugins: Map<string, AuthMethodPlugin>;
   proofGenerator?: MembraneProofGenerator;
+  urlProvider: UrlProvider;
 }
 
 function errorJson(code: string, message: string, status: number) {
@@ -52,8 +54,10 @@ export function createApp(ctx: ServiceContext): Hono {
   });
 
   // ---- GET /v1/info ----
-  app.get('/v1/info', (c) => {
+  app.get('/v1/info', async (c) => {
     const { config } = ctx;
+    const linkerUrls = await ctx.urlProvider.getLinkerUrls();
+    const httpGateways = await ctx.urlProvider.getHttpGateways();
     return c.json({
       happ: {
         id: config.happ.id,
@@ -61,9 +65,9 @@ export function createApp(ctx: ServiceContext): Hono {
         description: config.happ.description,
         icon_url: config.happ.icon_url,
       },
-      http_gateways: config.http_gateways ?? [],
+      http_gateways: httpGateways,
       auth_methods: config.auth_methods,
-      linker_info: config.linker_urls?.length
+      linker_info: linkerUrls
         ? (config.linker_info ?? { selection_mode: 'assigned' })
         : undefined,
       happ_bundle_url: config.happ.happ_bundle_url,
@@ -330,11 +334,7 @@ export function createApp(ctx: ServiceContext): Hono {
       );
     }
 
-    let linkerUrlsExpireAt: string | undefined;
-    if (ctx.config.linker_urls?.length) {
-      const expireSeconds = ctx.config.linker_urls_expire_after_seconds ?? 21600;
-      linkerUrlsExpireAt = new Date(Date.now() + expireSeconds * 1000).toISOString();
-    }
+    const linkerUrls = await ctx.urlProvider.getLinkerUrls();
 
     let membraneProofs: Record<string, string> | undefined;
     if (ctx.proofGenerator && ctx.config.dna_hashes?.length) {
@@ -349,8 +349,7 @@ export function createApp(ctx: ServiceContext): Hono {
     }
 
     return c.json({
-      linker_urls: ctx.config.linker_urls?.length ? ctx.config.linker_urls : undefined,
-      linker_urls_expire_at: linkerUrlsExpireAt,
+      linker_urls: linkerUrls,
       membrane_proofs: membraneProofs,
       happ_bundle_url: ctx.config.happ.happ_bundle_url,
       dna_modifiers: ctx.config.dna_modifiers,
@@ -437,16 +436,14 @@ export function createApp(ctx: ServiceContext): Hono {
       );
     }
 
-    let linkerUrlsExpireAt: string | undefined;
-    if (ctx.config.linker_urls?.length) {
-      const expireSeconds = ctx.config.linker_urls_expire_after_seconds ?? 21600;
-      linkerUrlsExpireAt = new Date(Date.now() + expireSeconds * 1000).toISOString();
-    }
+    const [linkerUrls, httpGateways] = await Promise.all([
+      ctx.urlProvider.getLinkerUrls(),
+      ctx.urlProvider.getHttpGateways(),
+    ]);
 
     return c.json({
-      linker_urls: ctx.config.linker_urls?.length ? ctx.config.linker_urls : undefined,
-      linker_urls_expire_at: linkerUrlsExpireAt,
-      http_gateways: ctx.config.http_gateways ?? [],
+      linker_urls: linkerUrls,
+      http_gateways: httpGateways,
     });
   });
 

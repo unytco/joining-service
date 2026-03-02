@@ -114,6 +114,6 @@ describe('Invite code flow', () => {
     const credRes = await request(`/v1/join/${session}/provision`);
     expect(credRes.status).toBe(200);
     const creds = await credRes.json();
-    expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
+    expect(creds.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090' }]);
   });
 });

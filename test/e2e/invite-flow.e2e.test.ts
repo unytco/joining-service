@@ -39,6 +39,6 @@ describe('E2E: Invite code flow', () => {
     expect(session.status).toBe('ready');
 
     const creds = await session.getProvision();
-    expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
+    expect(creds.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090' }]);
   });
 });

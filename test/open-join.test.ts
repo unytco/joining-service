@@ -67,9 +67,8 @@ describe('Open join flow', () => {
     expect(credRes.status).toBe(200);
 
     const creds = await credRes.json();
-    expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
+    expect(creds.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090' }]);
     expect(creds.happ_bundle_url).toBe('https://example.com/test.happ');
-    expect(creds.linker_urls_expire_at).toBeDefined();
   });
 
   it('GET /v1/join/:session/status returns ready', async () => {

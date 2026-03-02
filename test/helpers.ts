@@ -9,6 +9,7 @@ import { InviteCodeAuthMethod } from '../src/auth-methods/invite-code.js';
 import { FileTransport } from '../src/email/file.js';
 import { randomBytes } from 'node:crypto';
 import { LairProofGenerator } from '../src/membrane-proof/lair-signer.js';
+import { StaticUrlProvider } from '../src/urls/static.js';
 import type { AuthMethodPlugin } from '../src/auth-methods/plugin.js';
 import type { Hono } from 'hono';
 
@@ -104,11 +105,14 @@ export async function createTestApp(
     proofGenerator = await LairProofGenerator.fromSeed(randomBytes(32));
   }
 
+  const urlProvider = new StaticUrlProvider(config.linker_urls, config.http_gateways);
+
   const ctx: ServiceContext = {
     config,
     sessionStore,
     authPlugins,
     proofGenerator,
+    urlProvider,
   };
 
   const app = createApp(ctx);

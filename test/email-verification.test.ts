@@ -76,8 +76,7 @@ describe('Email verification flow', () => {
     expect(credRes.status).toBe(200);
 
     const creds = await credRes.json();
-    expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
-    expect(creds.linker_urls_expire_at).toBeDefined();
+    expect(creds.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090' }]);
   });
 
   it('wrong code returns verification_failed', async () => {

@@ -127,6 +127,7 @@ Returns hApp metadata, available read-only gateways, supported auth methods, and
 | `http_gateways[].url` | string (URL) | yes | Gateway base URL |
 | `http_gateways[].dna_hashes` | string[] | yes | Base64-encoded DNA hashes served by this gateway |
 | `http_gateways[].status` | string | yes | `"available"`, `"degraded"`, or `"offline"` |
+| `http_gateways[].expires_at` | string (ISO 8601) | no | When this gateway entry expires. Absent means no known expiry. |
 | `auth_methods` | string[] | yes | Supported authentication methods (see Section 7) |
 | `linker_info` | object | no | Absent when the service does not manage linker relay URLs (e.g. pure membrane-proof or gateway-only deployments) |
 | `linker_info.selection_mode` | string | if linker_info present | `"assigned"` (server picks linker) or `"client_choice"` (client picks from list) |
@@ -327,8 +328,8 @@ Retrieve the provision data needed to connect to the Holochain network. Only ava
 ```json
 {
   "linker_urls": [
-    "wss://linker1.example.com:8090",
-    "wss://linker2.example.com:8090"
+    { "url": "wss://linker1.example.com:8090" },
+    { "url": "wss://linker2.example.com:8090", "expires_at": "2026-02-25T18:00:00Z" }
   ],
   "membrane_proofs": {
     "uhC0k_chat_dna_hash...": "gqNPa6RkYXRh...",
@@ -338,15 +339,15 @@ Retrieve the provision data needed to connect to the Holochain network. Only ava
   "dna_modifiers": {
     "network_seed": "mewsfeed-mainnet-2026",
     "properties": {}
-  },
-  "linker_urls_expire_at": "2026-02-25T18:00:00Z"
+  }
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `linker_urls` | string[] | no | Ordered list of linker WebSocket URLs (client tries in order). Absent when the service does not manage linker relay URLs. |
-| `linker_urls_expire_at` | string (ISO 8601) | no | When the linker URLs stop accepting connections from this agent. Absent when `linker_urls` is absent. Membrane proofs do not expire — once committed during genesis they are permanent on the DHT. Client should call `POST /v1/reconnect` to obtain fresh linker URLs before or after expiry. |
+| `linker_urls` | LinkerUrl[] | no | Ordered list of linker URL entries (client tries in order). Absent when the service does not manage linker relay URLs. |
+| `linker_urls[].url` | string (WSS URL) | yes | WebSocket URL for this linker relay |
+| `linker_urls[].expires_at` | string (ISO 8601) | no | When this individual linker URL reservation expires. Absent means no known expiry. Client should call `POST /v1/reconnect` to obtain fresh URLs. Membrane proofs do not expire. |
 | `membrane_proofs` | object | no | Map of DnaHash (base64-encoded, e.g. `uhC0k...`) to base64-encoded msgpack membrane proof bytes. One entry per DNA role that requires a membrane proof. Absent/empty if the hApp has no membrane requirement. |
 | `happ_bundle_url` | string (URL) | no | URL to fetch the .happ bundle. May differ from `/info` response (gated behind auth). |
 | `dna_modifiers` | object | no | DNA modifiers to apply during installation |
@@ -366,7 +367,7 @@ Retrieve the provision data needed to connect to the Holochain network. Only ava
 ### 3.6 `POST /v1/reconnect` — Reconnect (Get Updated URLs)
 
 An agent that has already completed joining can request updated linker URLs and gateway URLs. This is used when:
-- Linker URL reservations have expired (`linker_urls_expire_at` has passed)
+- One or more linker URL reservations have expired (per-entry `expires_at` has passed)
 - The client has lost connectivity and needs fresh infrastructure URLs
 - The pool of available linkers or gateways has changed
 
@@ -391,8 +392,8 @@ This endpoint does **not** re-run verification challenges. Instead, the agent pr
 ```json
 {
   "linker_urls": [
-    "wss://linker3.example.com:8090",
-    "wss://linker4.example.com:8090"
+    { "url": "wss://linker3.example.com:8090", "expires_at": "2026-02-25T18:00:00Z" },
+    { "url": "wss://linker4.example.com:8090" }
   ],
   "http_gateways": [
     {
@@ -400,16 +401,14 @@ This endpoint does **not** re-run verification challenges. Instead, the agent pr
       "dna_hashes": ["uhC0k..."],
       "status": "available"
     }
-  ],
-  "linker_urls_expire_at": "2026-02-25T18:00:00Z"
+  ]
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `linker_urls` | string[] | no | Updated ordered list of linker WebSocket URLs. Absent when the service does not manage linker relay URLs. |
-| `linker_urls_expire_at` | string (ISO 8601) | no | When the new linker URL reservation expires. Absent when `linker_urls` is absent. |
-| `http_gateways` | array | no | Current read-only gateway instances (same schema as `/v1/info`) |
+| `linker_urls` | LinkerUrl[] | no | Updated ordered list of linker URL entries. Absent when the service does not manage linker relay URLs. Each entry may carry its own `expires_at`. |
+| `http_gateways` | array | no | Current read-only gateway instances (same schema as `/v1/info`). Each entry may carry its own `expires_at`. |
 
 **Errors**:
 
@@ -727,6 +726,15 @@ interface HttpGateway {
   url: string;
   dna_hashes: string[];
   status: 'available' | 'degraded' | 'offline';
+  /** When this gateway entry expires. Absent means no known expiry. */
+  expires_at?: string;
+}
+
+/** A linker WebSocket URL with optional per-URL expiration. */
+interface LinkerUrl {
+  url: string;
+  /** When this linker URL reservation expires. Absent means no known expiry. */
+  expires_at?: string;
 }
 
 type AuthMethod =
@@ -784,11 +792,11 @@ interface VerifyResponse {
 // --- /v1/join/{session}/provision ---
 
 interface JoinProvision {
-  linker_urls?: string[];
+  /** Each entry may carry its own expires_at. Absent when service does not manage linker relay URLs. */
+  linker_urls?: LinkerUrl[];
   membrane_proofs?: Record<string, string>;
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
-  linker_urls_expire_at?: string;
 }
 
 // --- /v1/reconnect ---
@@ -800,9 +808,10 @@ interface ReconnectRequest {
 }
 
 interface ReconnectResponse {
-  linker_urls?: string[];
+  /** Each entry may carry its own expires_at. Absent when service does not manage linker relay URLs. */
+  linker_urls?: LinkerUrl[];
+  /** Each entry may carry its own expires_at. */
   http_gateways?: HttpGateway[];
-  linker_urls_expire_at?: string;
 }
 
 // --- Errors ---

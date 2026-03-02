@@ -36,7 +36,6 @@ export interface ServiceConfig {
     pending_ttl_seconds?: number;
     ready_ttl_seconds?: number;
   };
-  linker_urls_expire_after_seconds?: number;
   reconnect?: {
     enabled: boolean;
     timestamp_tolerance_seconds?: number;
@@ -50,7 +49,6 @@ const DEFAULTS = {
     pending_ttl_seconds: 3600,
     ready_ttl_seconds: 86400,
   },
-  linker_urls_expire_after_seconds: 21600,
   reconnect: {
     enabled: true,
     timestamp_tolerance_seconds: 300,
@@ -72,9 +70,6 @@ export function resolveConfig(partial: Partial<ServiceConfig>): ServiceConfig {
     auth_methods: partial.auth_methods,
     linker_urls: partial.linker_urls,
     session: { ...DEFAULTS.session, ...partial.session },
-    linker_urls_expire_after_seconds:
-      partial.linker_urls_expire_after_seconds ??
-      DEFAULTS.linker_urls_expire_after_seconds,
     reconnect: { ...DEFAULTS.reconnect, ...partial.reconnect },
     port: partial.port ?? DEFAULTS.port,
   };

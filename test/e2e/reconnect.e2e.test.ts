@@ -61,8 +61,7 @@ describe('E2E: Reconnect flow', () => {
       },
     );
 
-    expect(result.linker_urls).toEqual(['wss://linker.example.com:8090']);
-    expect(result.linker_urls_expire_at).toBeTruthy();
+    expect(result.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090' }]);
   });
 
   it('reconnect for unknown agent throws agent_not_joined', async () => {

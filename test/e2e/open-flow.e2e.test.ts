@@ -40,10 +40,9 @@ describe('E2E: Open auth flow', () => {
     expect(session.status).toBe('ready');
 
     const provision = await session.getProvision();
-    expect(provision.linker_urls).toEqual(['wss://linker.example.com:8090']);
+    expect(provision.linker_urls).toEqual([{ url: 'wss://linker.example.com:8090' }]);
     expect(provision.membrane_proofs).toBeDefined();
     expect(provision.membrane_proofs!['uhC0kTestDna1']).toBeTruthy();
-    expect(provision.linker_urls_expire_at).toBeTruthy();
   });
 
   it('rejects duplicate agent key with 409', async () => {
