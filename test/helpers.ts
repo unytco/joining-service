@@ -11,6 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { LairProofGenerator } from '../src/membrane-proof/lair-signer.js';
 import { StaticUrlProvider } from '../src/urls/static.js';
 import type { AuthMethodPlugin } from '../src/auth-methods/plugin.js';
+import type { HcAuthClient } from '../src/hc-auth/index.js';
 import type { Hono } from 'hono';
 
 // A minimal valid 39-byte AgentPubKey, base64-encoded.
@@ -36,6 +37,7 @@ export interface TestApp {
 export async function createTestApp(
   configOverrides: Partial<ServiceConfig> = {},
   pluginOverrides?: Map<string, AuthMethodPlugin>,
+  hcAuthClient?: HcAuthClient,
 ): Promise<TestApp> {
   const defaults: Partial<ServiceConfig> = {
     happ: {
@@ -113,6 +115,7 @@ export async function createTestApp(
     authPlugins,
     proofGenerator,
     urlProvider,
+    hcAuthClient,
   };
 
   const app = createApp(ctx);

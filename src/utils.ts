@@ -14,6 +14,21 @@ export function fromBase64(str: string): Uint8Array {
 
 const AGENT_KEY_PREFIX = new Uint8Array([0x84, 0x20, 0x24]);
 
+/**
+ * Extract the raw 32-byte Ed25519 public key from a Holochain AgentPubKey and
+ * return it as base64url (no padding), which is the format expected by
+ * hc-auth-server.
+ *
+ * HoloHash layout: [3 bytes prefix][32 bytes key][4 bytes DHT location]
+ */
+export function agentKeyToRawEd25519Base64url(agentKey: string): string {
+  const bytes = fromBase64(agentKey);
+  if (bytes.length !== 39) {
+    throw new Error(`agentKey must be 39 bytes, got ${bytes.length}`);
+  }
+  return Buffer.from(bytes.slice(3, 35)).toString('base64url');
+}
+
 export function validateAgentKey(agentKey: string): {
   valid: boolean;
   reason?: string;

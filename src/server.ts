@@ -16,6 +16,7 @@ import type { AuthMethodPlugin } from './auth-methods/plugin.js';
 import type { EmailTransport } from './email/transport.js';
 import { StaticUrlProvider } from './urls/static.js';
 import type { UrlProvider } from './urls/provider.js';
+import { HcAuthClient } from './hc-auth/index.js';
 
 function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
   if (!config.email) return null;
@@ -126,12 +127,17 @@ export async function startServer(
 
   const urlProvider = buildUrlProvider(config);
 
+  const hcAuthClient = config.hc_auth
+    ? new HcAuthClient(config.hc_auth)
+    : undefined;
+
   const context: ServiceContext = {
     config,
     sessionStore,
     authPlugins,
     proofGenerator,
     urlProvider,
+    hcAuthClient,
   };
 
   const app = createApp(context);
