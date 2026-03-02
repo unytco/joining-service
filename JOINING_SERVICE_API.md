@@ -21,8 +21,8 @@ First-time join:
   5. Extension generates agent key
   6. POST /v1/join → session + challenges (if any)
   7. User completes verification challenges (if any)
-  8. GET /v1/join/{session}/credentials → linker URLs, membrane proof, hApp bundle URL
-  9. Client installs hApp with credentials
+  8. GET /v1/join/{session}/provision → linker URLs, membrane proof, hApp bundle URL
+  9. Client installs hApp with provision data
   10. Standard hApp UI operates
 
 Reconnect (linker URLs expired or infrastructure changed):
@@ -128,7 +128,8 @@ Returns hApp metadata, available read-only gateways, supported auth methods, and
 | `http_gateways[].dna_hashes` | string[] | yes | Base64-encoded DNA hashes served by this gateway |
 | `http_gateways[].status` | string | yes | `"available"`, `"degraded"`, or `"offline"` |
 | `auth_methods` | string[] | yes | Supported authentication methods (see Section 7) |
-| `linker_info.selection_mode` | string | yes | `"assigned"` (server picks linker) or `"client_choice"` (client picks from list) |
+| `linker_info` | object | no | Absent when the service does not manage linker relay URLs (e.g. pure membrane-proof or gateway-only deployments) |
+| `linker_info.selection_mode` | string | if linker_info present | `"assigned"` (server picks linker) or `"client_choice"` (client picks from list) |
 | `linker_info.region_hints` | string[] | no | Available regions for latency optimization |
 | `happ_bundle_url` | string (URL) | no | URL to download the .happ bundle. May be absent if gated behind auth. |
 | `dna_modifiers` | object | no | DNA modifiers to apply during installation |
@@ -318,9 +319,9 @@ Same response shape as the join response.
 
 ---
 
-### 3.5 `GET /v1/join/{session}/credentials` — Get Credentials
+### 3.5 `GET /v1/join/{session}/provision` — Get Provision
 
-Retrieve the credentials needed to connect to the Holochain network. Only available when session status is `"ready"`.
+Retrieve the provision data needed to connect to the Holochain network. Only available when session status is `"ready"`.
 
 **Response** (`200 OK`):
 ```json
@@ -344,13 +345,13 @@ Retrieve the credentials needed to connect to the Holochain network. Only availa
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `linker_urls` | string[] | yes | Ordered list of linker WebSocket URLs (client tries in order) |
+| `linker_urls` | string[] | no | Ordered list of linker WebSocket URLs (client tries in order). Absent when the service does not manage linker relay URLs. |
+| `linker_urls_expire_at` | string (ISO 8601) | no | When the linker URLs stop accepting connections from this agent. Absent when `linker_urls` is absent. Membrane proofs do not expire — once committed during genesis they are permanent on the DHT. Client should call `POST /v1/reconnect` to obtain fresh linker URLs before or after expiry. |
 | `membrane_proofs` | object | no | Map of DnaHash (base64-encoded, e.g. `uhC0k...`) to base64-encoded msgpack membrane proof bytes. One entry per DNA role that requires a membrane proof. Absent/empty if the hApp has no membrane requirement. |
 | `happ_bundle_url` | string (URL) | no | URL to fetch the .happ bundle. May differ from `/info` response (gated behind auth). |
 | `dna_modifiers` | object | no | DNA modifiers to apply during installation |
 | `dna_modifiers.network_seed` | string | no | Network seed |
 | `dna_modifiers.properties` | object | no | DNA properties (JSON; client encodes to msgpack) |
-| `linker_urls_expire_at` | string (ISO 8601) | no | When the linker URLs stop accepting connections from this agent. Membrane proofs do not expire — once committed during genesis they are permanent on the DHT. Client should call `POST /v1/reconnect` to obtain fresh linker URLs before or after expiry. |
 
 **Errors**:
 
@@ -406,9 +407,9 @@ This endpoint does **not** re-run verification challenges. Instead, the agent pr
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `linker_urls` | string[] | yes | Updated ordered list of linker WebSocket URLs |
+| `linker_urls` | string[] | no | Updated ordered list of linker WebSocket URLs. Absent when the service does not manage linker relay URLs. |
+| `linker_urls_expire_at` | string (ISO 8601) | no | When the new linker URL reservation expires. Absent when `linker_urls` is absent. |
 | `http_gateways` | array | no | Current read-only gateway instances (same schema as `/v1/info`) |
-| `linker_urls_expire_at` | string (ISO 8601) | no | When the new linker URL reservation expires |
 
 **Errors**:
 
@@ -488,7 +489,7 @@ Recommended limits:
 | `GET /v1/info` | 120/min | per IP |
 | `POST /v1/join` | 10/min | per IP |
 | `POST /v1/join/{session}/verify` | 5/min | per session |
-| `GET /v1/join/{session}/credentials` | 30/min | per session |
+| `GET /v1/join/{session}/provision` | 30/min | per session |
 | `GET /v1/join/{session}/status` | 30/min | per session |
 | `POST /v1/reconnect` | 10/min | per agent key |
 
@@ -497,7 +498,7 @@ Recommended limits:
 ## 6. Security Considerations
 
 ### Session Scoping
-- Each session is bound to the `agent_key` that created it. Credentials are only issued for that agent.
+- Each session is bound to the `agent_key` that created it. Provision data is only issued for that agent.
 - Session tokens: cryptographically random, at least 128 bits of entropy, prefixed `js_`.
 - Expiry: 1 hour for pending sessions, 24 hours for ready sessions.
 
@@ -564,7 +565,7 @@ Client                                      Joining Service
   ├─ POST /v1/join { agent_key } ────────────────►│
   │◄─ { session, status: "ready" } ──────────────┤
   │                                              │
-  ├─ GET /v1/join/{session}/credentials ─────────►│
+  ├─ GET /v1/join/{session}/provision ──────────►│
   │◄─ { linker_urls, happ_bundle_url } ──────────┤
   │                                              │
   ├─ [fetch hApp bundle, install, connect] ──────►│
@@ -590,7 +591,7 @@ Client                                      Joining Service
   │  { challenge_id, response: "482916" } ──────►│
   │◄─ { status: "ready" } ───────────────────────┤
   │                                              │
-  ├─ GET /v1/join/{session}/credentials ─────────►│
+  ├─ GET /v1/join/{session}/provision ──────────►│
   │◄─ { linker_urls, membrane_proofs } ──────────┤
 ```
 
@@ -611,7 +612,7 @@ Client                                      Joining Service
   │  { challenge_id, response: "0x1a2b..." } ───►│
   │◄─ { status: "ready" } ───────────────────────┤
   │                                              │
-  ├─ GET /v1/join/{session}/credentials ─────────►│
+  ├─ GET /v1/join/{session}/provision ──────────►│
   │◄─ { linker_urls, membrane_proofs } ──────────┤
 ```
 
@@ -684,7 +685,7 @@ Client                                      Joining Service
   ├─ GET /v1/join/{session}/status ──────────────►│
   │◄─ { status: "ready" } ───────────────────────┤
   │                                              │
-  ├─ GET /v1/join/{session}/credentials ─────────►│
+  ├─ GET /v1/join/{session}/provision ──────────►│
   │◄─ { linker_urls, membrane_proofs } ──────────┤
 ```
 
@@ -714,7 +715,7 @@ interface JoiningServiceInfo {
   };
   http_gateways?: HttpGateway[];
   auth_methods: AuthMethod[];
-  linker_info: {
+  linker_info?: {
     selection_mode: 'assigned' | 'client_choice';
     region_hints?: string[];
   };
@@ -780,10 +781,10 @@ interface VerifyResponse {
   poll_interval_ms?: number;
 }
 
-// --- /v1/join/{session}/credentials ---
+// --- /v1/join/{session}/provision ---
 
-interface JoinCredentials {
-  linker_urls: string[];
+interface JoinProvision {
+  linker_urls?: string[];
   membrane_proofs?: Record<string, string>;
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
@@ -799,7 +800,7 @@ interface ReconnectRequest {
 }
 
 interface ReconnectResponse {
-  linker_urls: string[];
+  linker_urls?: string[];
   http_gateways?: HttpGateway[];
   linker_urls_expire_at?: string;
 }

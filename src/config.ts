@@ -9,7 +9,7 @@ export interface ServiceConfig {
     happ_bundle_url?: string;
   };
   auth_methods: AuthMethod[];
-  linker_urls: string[];
+  linker_urls?: string[];
   linker_info?: {
     selection_mode: 'assigned' | 'client_choice';
     region_hints?: string[];
@@ -64,9 +64,6 @@ export function resolveConfig(partial: Partial<ServiceConfig>): ServiceConfig {
   }
   if (!partial.auth_methods?.length) {
     throw new Error('config: at least one auth_method is required');
-  }
-  if (!partial.linker_urls?.length) {
-    throw new Error('config: at least one linker_url is required');
   }
 
   return {

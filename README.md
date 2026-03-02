@@ -1,33 +1,37 @@
 # Holo Joining Service
 
-Standardized REST API for onboarding users to Holochain apps running in the Holo Web Conductor (HWC) browser extension.
+Standardized REST API for onboarding agents into Holochain apps.
 
 ## What This Is
 
-A per-hApp service that brokers the data HWC needs to connect a new user to a Holochain network:
+A per-hApp service that brokers the data a Holochain client needs to connect a new agent to a network. Each capability is independently optional — deploy only what your hApp requires:
 
-- **Linker URLs** — relay servers connecting browser nodes to the network
-- **Membrane proofs** — cryptographic authorization to join (optional, per-hApp)
-- **hApp bundles** — the application WASM and manifest
-- **HTTP gateways** — read-only access before the user has joined
+- **Membrane proofs** — cryptographic authorization to join (per-hApp, per-DNA)
+- **HTTP gateways** — read-only access before the agent has joined
+- **Linker URLs** — relay servers for browser-based nodes (HWC / Holo-specific)
+- **hApp bundles** — the application WASM and manifest URL
+
+This service is not HWC-specific. It works for any Holochain deployment context — browser-based nodes that need linker relay URLs, native nodes that only need membrane proofs, gateway-only read access, or any combination.
 
 ## Documents
 
 - [JOINING_SERVICE_API.md](./JOINING_SERVICE_API.md) — Full REST API specification
-- [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) — Phased plan for client library, extension, and reference server
+- [DEPLOYMENT.md](./DEPLOYMENT.md) — Deployment guide (local, Cloudflare Workers, edge node)
 
 ## Quick Summary
 
 ```
-User loads page
+Agent starts up
   → GET /.well-known/holo-joining         (auto-discover joining service)
-  → GET /v1/info                           (R/O gateways, auth methods)
+  → GET /v1/info                           (gateways, auth methods, linker info)
   → POST /v1/join                          (agent key + identity claims)
   → POST /v1/join/{session}/verify         (if verification required)
-  → GET /v1/join/{session}/credentials     (linker URLs, membrane proof)
+  → GET /v1/join/{session}/provision     (membrane proof, linker URLs, bundle URL)
   → Install hApp, connect to network
 ```
 
+All fields in the provision response are optional. A minimal deployment serving only membrane proofs returns just `membrane_proofs`. A gateway-only deployment returns only `http_gateways` from `/v1/info`.
+
 ## Status
 
-Design phase. API specification is draft. No implementation yet.
+Implementation complete. Reference server, client library, and E2E tests are in `src/` and `test/`.

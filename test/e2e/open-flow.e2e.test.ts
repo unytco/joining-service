@@ -34,16 +34,16 @@ describe('E2E: Open auth flow', () => {
     expect(session.challenges).toBeUndefined();
   });
 
-  it('getCredentials returns linker URLs and membrane proofs', async () => {
+  it('getProvision returns linker URLs and membrane proofs', async () => {
     const agentKey = fakeAgentKey(2);
     const session = await client.join(agentKey);
     expect(session.status).toBe('ready');
 
-    const creds = await session.getCredentials();
-    expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
-    expect(creds.membrane_proofs).toBeDefined();
-    expect(creds.membrane_proofs!['uhC0kTestDna1']).toBeTruthy();
-    expect(creds.linker_urls_expire_at).toBeTruthy();
+    const provision = await session.getProvision();
+    expect(provision.linker_urls).toEqual(['wss://linker.example.com:8090']);
+    expect(provision.membrane_proofs).toBeDefined();
+    expect(provision.membrane_proofs!['uhC0kTestDna1']).toBeTruthy();
+    expect(provision.linker_urls_expire_at).toBeTruthy();
   });
 
   it('rejects duplicate agent key with 409', async () => {

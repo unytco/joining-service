@@ -33,12 +33,12 @@ describe('E2E: Invite code flow', () => {
     expect(session.reason).toBeTruthy();
   });
 
-  it('credentials available after valid invite join', async () => {
+  it('provision available after valid invite join', async () => {
     const agentKey = fakeAgentKey(22);
     const session = await client.join(agentKey, { invite_code: 'VALID-CODE-2' });
     expect(session.status).toBe('ready');
 
-    const creds = await session.getCredentials();
+    const creds = await session.getProvision();
     expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
   });
 });

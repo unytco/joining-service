@@ -25,7 +25,7 @@ describe('Email verification flow', () => {
     return match![1];
   }
 
-  it('full email join flow: join → verify → credentials', async () => {
+  it('full email join flow: join → verify → provision', async () => {
     const { request } = await createTestApp({
       auth_methods: ['email_code'],
       email: { provider: 'file', output_dir: tmpDir },
@@ -71,8 +71,8 @@ describe('Email verification flow', () => {
     const verifyBody = await verifyRes.json();
     expect(verifyBody.status).toBe('ready');
 
-    // Step 4: GET /v1/join/:session/credentials
-    const credRes = await request(`/v1/join/${session}/credentials`);
+    // Step 4: GET /v1/join/:session/provision
+    const credRes = await request(`/v1/join/${session}/provision`);
     expect(credRes.status).toBe(200);
 
     const creds = await credRes.json();
@@ -112,7 +112,7 @@ describe('Email verification flow', () => {
     expect(body.error.code).toBe('verification_failed');
   });
 
-  it('credentials returns 403 while session is pending', async () => {
+  it('provision returns 403 while session is pending', async () => {
     const { request } = await createTestApp({
       auth_methods: ['email_code'],
       email: { provider: 'file', output_dir: tmpDir },
@@ -130,7 +130,7 @@ describe('Email verification flow', () => {
 
     const { session } = await joinRes.json();
 
-    const credRes = await request(`/v1/join/${session}/credentials`);
+    const credRes = await request(`/v1/join/${session}/provision`);
     expect(credRes.status).toBe(403);
     const body = await credRes.json();
     expect(body.error.code).toBe('not_ready');

@@ -33,7 +33,7 @@ describe('E2E: Email verification flow', () => {
     expect(session.pollIntervalMs).toBe(2000);
   });
 
-  it('full flow: join → read code → verify → credentials', async () => {
+  it('full flow: join → read code → verify → provision', async () => {
     const agentKey = fakeAgentKey(11);
     const session = await client.join(agentKey, { email: 'alice@example.com' });
     expect(session.status).toBe('pending');
@@ -53,8 +53,8 @@ describe('E2E: Email verification flow', () => {
     const verified = await session.verify(challengeId, code);
     expect(verified.status).toBe('ready');
 
-    // Get credentials
-    const creds = await verified.getCredentials();
+    // Get provision
+    const creds = await verified.getProvision();
     expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
   });
 

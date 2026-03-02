@@ -10,7 +10,7 @@ export type {
   AuthMethod,
   DnaModifiers,
   Challenge,
-  JoinCredentials,
+  JoinProvision,
   ReconnectRequest,
   ReconnectResponse,
 } from '../types.js';

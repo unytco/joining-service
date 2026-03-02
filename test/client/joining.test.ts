@@ -319,8 +319,8 @@ describe('JoinSession', () => {
     });
   });
 
-  describe('getCredentials', () => {
-    it('returns credentials when ready', async () => {
+  describe('getProvision', () => {
+    it('returns provision when ready', async () => {
       mockFetch.mockResolvedValueOnce(
         jsonResponse({
           linker_urls: ['wss://linker.example.com:8090'],
@@ -331,13 +331,13 @@ describe('JoinSession', () => {
       );
 
       const session = new JoinSession(TEST_BASE_URL, 'js_creds', 'ready');
-      const creds = await session.getCredentials();
+      const provision = await session.getProvision();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        `${TEST_BASE_URL}/join/js_creds/credentials`,
+        `${TEST_BASE_URL}/join/js_creds/provision`,
       );
-      expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);
-      expect(creds.membrane_proofs).toEqual({ 'uhC0kDna1': 'base64proof' });
+      expect(provision.linker_urls).toEqual(['wss://linker.example.com:8090']);
+      expect(provision.membrane_proofs).toEqual({ 'uhC0kDna1': 'base64proof' });
     });
 
     it('throws not_ready when session is pending', async () => {
@@ -346,7 +346,7 @@ describe('JoinSession', () => {
       );
 
       const session = new JoinSession(TEST_BASE_URL, 'js_notready', 'pending');
-      await expect(session.getCredentials()).rejects.toThrow(JoiningError);
+      await expect(session.getProvision()).rejects.toThrow(JoiningError);
     });
   });
 });

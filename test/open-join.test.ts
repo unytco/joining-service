@@ -52,7 +52,7 @@ describe('Open join flow', () => {
     expect(body.challenges).toBeUndefined();
   });
 
-  it('GET /v1/join/:session/credentials returns linker URLs', async () => {
+  it('GET /v1/join/:session/provision returns linker URLs', async () => {
     const { request } = await createTestApp();
     const agentKey = fakeAgentKey();
 
@@ -63,7 +63,7 @@ describe('Open join flow', () => {
     });
     const { session } = await joinRes.json();
 
-    const credRes = await request(`/v1/join/${session}/credentials`);
+    const credRes = await request(`/v1/join/${session}/provision`);
     expect(credRes.status).toBe(200);
 
     const creds = await credRes.json();
@@ -144,13 +144,13 @@ describe('Open join flow', () => {
   it('returns 401 for invalid session token', async () => {
     const { request } = await createTestApp();
 
-    const res = await request('/v1/join/js_nonexistent/credentials');
+    const res = await request('/v1/join/js_nonexistent/provision');
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error.code).toBe('invalid_session');
   });
 
-  it('credentials include membrane proofs when configured', async () => {
+  it('provision include membrane proofs when configured', async () => {
     const { request } = await createTestApp({
       membrane_proof: { enabled: true },
       dna_hashes: ['uhC0kTestDnaHash1'],
@@ -164,7 +164,7 @@ describe('Open join flow', () => {
     });
     const { session } = await joinRes.json();
 
-    const credRes = await request(`/v1/join/${session}/credentials`);
+    const credRes = await request(`/v1/join/${session}/provision`);
     const creds = await credRes.json();
 
     expect(creds.membrane_proofs).toBeDefined();

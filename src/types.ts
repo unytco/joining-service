@@ -15,7 +15,8 @@ export interface JoiningServiceInfo {
   };
   http_gateways?: HttpGateway[];
   auth_methods: AuthMethod[];
-  linker_info: {
+  /** Absent when the service does not manage linker relay URLs. */
+  linker_info?: {
     selection_mode: 'assigned' | 'client_choice';
     region_hints?: string[];
   };
@@ -77,12 +78,14 @@ export interface VerifyResponse {
   poll_interval_ms?: number;
 }
 
-export interface JoinCredentials {
-  linker_urls: string[];
+export interface JoinProvision {
+  /** Absent when the service does not manage linker relay URLs. */
+  linker_urls?: string[];
+  /** Absent when linker_urls is absent or expiry does not apply. */
+  linker_urls_expire_at?: string;
   membrane_proofs?: Record<string, string>;
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
-  linker_urls_expire_at?: string;
 }
 
 export interface ReconnectRequest {
@@ -92,9 +95,11 @@ export interface ReconnectRequest {
 }
 
 export interface ReconnectResponse {
-  linker_urls: string[];
-  http_gateways?: HttpGateway[];
+  /** Absent when the service does not manage linker relay URLs. */
+  linker_urls?: string[];
+  /** Absent when linker_urls is absent. */
   linker_urls_expire_at?: string;
+  http_gateways?: HttpGateway[];
 }
 
 export interface ErrorResponse {

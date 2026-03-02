@@ -1,5 +1,5 @@
 /**
- * JoiningClient — handles the full discovery-join-verify-credentials flow
+ * JoiningClient — handles the full discovery-join-verify-provision flow
  * against a Holo joining service.
  *
  * Can be used standalone or orchestrated by WebConductorAppClient.
@@ -9,7 +9,7 @@ import type {
   WellKnownHoloJoining,
   JoiningServiceInfo,
   Challenge,
-  JoinCredentials,
+  JoinProvision,
   ReconnectResponse,
   JoinResponse,
   VerifyResponse,
@@ -109,16 +109,16 @@ export class JoinSession {
     );
   }
 
-  async getCredentials(): Promise<JoinCredentials> {
+  async getProvision(): Promise<JoinProvision> {
     const res = await fetch(
-      `${this.baseUrl}/join/${this.sessionToken}/credentials`,
+      `${this.baseUrl}/join/${this.sessionToken}/provision`,
     );
 
     if (!res.ok) {
       await throwJoiningError(res);
     }
 
-    return await res.json() as JoinCredentials;
+    return await res.json() as JoinProvision;
   }
 }
 

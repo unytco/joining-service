@@ -94,7 +94,7 @@ describe('Invite code flow', () => {
     expect(body.error.code).toBe('missing_claims');
   });
 
-  it('credentials available after invite code join', async () => {
+  it('provision available after invite code join', async () => {
     const { request } = await createTestApp({
       auth_methods: ['invite_code'],
       invite_codes: ['CRED-TEST'],
@@ -111,7 +111,7 @@ describe('Invite code flow', () => {
     });
     const { session } = await joinRes.json();
 
-    const credRes = await request(`/v1/join/${session}/credentials`);
+    const credRes = await request(`/v1/join/${session}/provision`);
     expect(credRes.status).toBe(200);
     const creds = await credRes.json();
     expect(creds.linker_urls).toEqual(['wss://linker.example.com:8090']);

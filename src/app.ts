@@ -63,7 +63,9 @@ export function createApp(ctx: ServiceContext): Hono {
       },
       http_gateways: config.http_gateways ?? [],
       auth_methods: config.auth_methods,
-      linker_info: config.linker_info ?? { selection_mode: 'assigned' },
+      linker_info: config.linker_urls?.length
+        ? (config.linker_info ?? { selection_mode: 'assigned' })
+        : undefined,
       happ_bundle_url: config.happ.happ_bundle_url,
       dna_modifiers: config.dna_modifiers,
     });
@@ -311,8 +313,8 @@ export function createApp(ctx: ServiceContext): Hono {
     return c.json(resp);
   });
 
-  // ---- GET /v1/join/:session/credentials ----
-  app.get('/v1/join/:session/credentials', async (c) => {
+  // ---- GET /v1/join/:session/provision ----
+  app.get('/v1/join/:session/provision', async (c) => {
     const sessionId = c.req.param('session');
     const session = await ctx.sessionStore.get(sessionId);
 
@@ -328,10 +330,11 @@ export function createApp(ctx: ServiceContext): Hono {
       );
     }
 
-    const expireSeconds = ctx.config.linker_urls_expire_after_seconds ?? 21600;
-    const linkerUrlsExpireAt = new Date(
-      Date.now() + expireSeconds * 1000,
-    ).toISOString();
+    let linkerUrlsExpireAt: string | undefined;
+    if (ctx.config.linker_urls?.length) {
+      const expireSeconds = ctx.config.linker_urls_expire_after_seconds ?? 21600;
+      linkerUrlsExpireAt = new Date(Date.now() + expireSeconds * 1000).toISOString();
+    }
 
     let membraneProofs: Record<string, string> | undefined;
     if (ctx.proofGenerator && ctx.config.dna_hashes?.length) {
@@ -346,11 +349,11 @@ export function createApp(ctx: ServiceContext): Hono {
     }
 
     return c.json({
-      linker_urls: ctx.config.linker_urls,
+      linker_urls: ctx.config.linker_urls?.length ? ctx.config.linker_urls : undefined,
+      linker_urls_expire_at: linkerUrlsExpireAt,
       membrane_proofs: membraneProofs,
       happ_bundle_url: ctx.config.happ.happ_bundle_url,
       dna_modifiers: ctx.config.dna_modifiers,
-      linker_urls_expire_at: linkerUrlsExpireAt,
     });
   });
 
@@ -434,15 +437,16 @@ export function createApp(ctx: ServiceContext): Hono {
       );
     }
 
-    const expireSeconds = ctx.config.linker_urls_expire_after_seconds ?? 21600;
-    const linkerUrlsExpireAt = new Date(
-      Date.now() + expireSeconds * 1000,
-    ).toISOString();
+    let linkerUrlsExpireAt: string | undefined;
+    if (ctx.config.linker_urls?.length) {
+      const expireSeconds = ctx.config.linker_urls_expire_after_seconds ?? 21600;
+      linkerUrlsExpireAt = new Date(Date.now() + expireSeconds * 1000).toISOString();
+    }
 
     return c.json({
-      linker_urls: ctx.config.linker_urls,
-      http_gateways: ctx.config.http_gateways ?? [],
+      linker_urls: ctx.config.linker_urls?.length ? ctx.config.linker_urls : undefined,
       linker_urls_expire_at: linkerUrlsExpireAt,
+      http_gateways: ctx.config.http_gateways ?? [],
     });
   });
 
