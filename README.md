@@ -16,6 +16,7 @@ This service is not HWC-specific. It works for any Holochain deployment context 
 ## Documents
 
 - [JOINING_SERVICE_API.md](./JOINING_SERVICE_API.md) — Full REST API specification
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — Overview of the different node types the service supports, flow diagrams, and the spectrum of configuration profiles and development directions.
 - [DEPLOYMENT.md](./DEPLOYMENT.md) — Deployment guide (local, Cloudflare Workers, edge node)
 
 ## Quick Summary
