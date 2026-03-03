@@ -13,6 +13,11 @@
       "source": "./src/client/index.ts",
       "import": "./dist/client/index.js",
       "types": "./dist/client/index.d.ts"
+    },
+    "./test": {
+      "source": "./test/e2e/helpers.ts",
+      "import": "./dist/test/e2e/helpers.js",
+      "types": "./dist/test/e2e/helpers.d.ts"
     }
   },
   "scripts": {
