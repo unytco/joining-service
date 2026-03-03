@@ -9,11 +9,13 @@ import { MemorySessionStore } from '../../src/session/memory-store.js';
 import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
+import { AgentWhitelistAuthMethod } from '../../src/auth-methods/agent-whitelist.js';
 import { FileTransport } from '../../src/email/file.js';
 import { LairProofGenerator } from '../../src/membrane-proof/lair-signer.js';
 import { StaticUrlProvider } from '../../src/urls/static.js';
 import { randomBytes } from 'node:crypto';
 import type { AuthMethodPlugin } from '../../src/auth-methods/plugin.js';
+import type { AuthMethod } from '../../src/types.js';
 import type http from 'node:http';
 
 export interface E2EServer {
@@ -50,8 +52,17 @@ export async function startE2EServer(
     config.session!.ready_ttl_seconds,
   );
 
+  // Flatten AuthMethodEntry[] to unique method names (handles { any_of: [...] } groups)
   const authPlugins = new Map<string, AuthMethodPlugin>();
-  for (const method of config.auth_methods) {
+  const methods = new Set<AuthMethod>();
+  for (const entry of config.auth_methods) {
+    if (typeof entry === 'object' && 'any_of' in entry) {
+      for (const m of entry.any_of) methods.add(m);
+    } else {
+      methods.add(entry as AuthMethod);
+    }
+  }
+  for (const method of methods) {
     switch (method) {
       case 'open':
         authPlugins.set('open', new OpenAuthMethod());
@@ -67,6 +78,12 @@ export async function startE2EServer(
         authPlugins.set(
           'invite_code',
           new InviteCodeAuthMethod(config.invite_codes ?? []),
+        );
+        break;
+      case 'agent_whitelist':
+        authPlugins.set(
+          'agent_whitelist',
+          new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
         );
         break;
     }
