@@ -21,7 +21,7 @@ export interface ServiceConfig {
     signing_key_path?: string;
   };
   email?: {
-    provider: 'postmark' | 'file';
+    provider: 'postmark' | 'sendgrid' | 'file';
     api_key?: string;
     from?: string;
     template?: string;
