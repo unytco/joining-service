@@ -1,4 +1,4 @@
-import type { AuthMethod, DnaModifiers } from './types.js';
+import type { AgentPubKeyB64, AuthMethodEntry, DnaModifiers } from './types.js';
 import type { HcAuthConfig } from './hc-auth/index.js';
 import type { LinkerAuthConfig } from './linker-auth/index.js';
 
@@ -10,7 +10,7 @@ export interface ServiceConfig {
     icon_url?: string;
     happ_bundle_url?: string;
   };
-  auth_methods: AuthMethod[];
+  auth_methods: AuthMethodEntry[];
   linker_info?: {
     selection_mode: 'assigned' | 'client_choice';
     region_hints?: string[];
@@ -30,6 +30,7 @@ export interface ServiceConfig {
   };
   base_url?: string;
   invite_codes?: string[];
+  allowed_agents?: AgentPubKeyB64[];
   session?: {
     store: 'memory' | 'sqlite' | 'cloudflare-kv';
     db_path?: string;

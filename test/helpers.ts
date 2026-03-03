@@ -6,6 +6,7 @@ import type { SessionStore } from '../src/session/store.js';
 import { OpenAuthMethod } from '../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../src/auth-methods/invite-code.js';
+import { AgentWhitelistAuthMethod } from '../src/auth-methods/agent-whitelist.js';
 import { FileTransport } from '../src/email/file.js';
 import { randomBytes } from 'node:crypto';
 import { LairProofGenerator } from '../src/membrane-proof/lair-signer.js';
@@ -13,6 +14,7 @@ import { StaticUrlProvider } from '../src/urls/static.js';
 import type { UrlProvider } from '../src/urls/provider.js';
 import type { AuthMethodPlugin } from '../src/auth-methods/plugin.js';
 import type { HcAuthClient } from '../src/hc-auth/index.js';
+import type { AuthMethod, AuthMethodEntry } from '../src/types.js';
 import type { Hono } from 'hono';
 
 // A minimal valid 39-byte AgentPubKey, base64-encoded.
@@ -78,7 +80,16 @@ export async function createTestApp(
     authPlugins = pluginOverrides;
   } else {
     authPlugins = new Map();
-    for (const method of config.auth_methods) {
+    // Flatten AuthMethodEntry[] to unique method names for plugin init
+    const methods = new Set<AuthMethod>();
+    for (const entry of config.auth_methods) {
+      if (typeof entry === 'object' && 'any_of' in entry) {
+        for (const m of (entry as { any_of: AuthMethod[] }).any_of) methods.add(m);
+      } else {
+        methods.add(entry as AuthMethod);
+      }
+    }
+    for (const method of methods) {
       switch (method) {
         case 'open':
           authPlugins.set('open', new OpenAuthMethod());
@@ -97,6 +108,12 @@ export async function createTestApp(
           authPlugins.set(
             'invite_code',
             new InviteCodeAuthMethod(config.invite_codes ?? []),
+          );
+          break;
+        case 'agent_whitelist':
+          authPlugins.set(
+            'agent_whitelist',
+            new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
           );
           break;
       }

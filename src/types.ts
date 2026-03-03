@@ -14,7 +14,7 @@ export interface JoiningServiceInfo {
     icon_url?: string;
   };
   http_gateways?: HttpGateway[];
-  auth_methods: AuthMethod[];
+  auth_methods: AuthMethodEntry[];
   /** Absent when the service does not manage linker relay URLs. */
   linker_info?: {
     selection_mode: 'assigned' | 'client_choice';
@@ -39,6 +39,9 @@ export interface LinkerUrl {
   expires_at?: string;
 }
 
+/** Base64-encoded 39-byte Holochain AgentPubKey. */
+export type AgentPubKeyB64 = string;
+
 export type AuthMethod =
   | 'open'
   | 'email_code'
@@ -46,7 +49,14 @@ export type AuthMethod =
   | 'evm_signature'
   | 'solana_signature'
   | 'invite_code'
+  | 'agent_whitelist'
   | `x-${string}`;
+
+export interface AuthMethodGroup {
+  any_of: AuthMethod[];
+}
+
+export type AuthMethodEntry = AuthMethod | AuthMethodGroup;
 
 export interface DnaModifiers {
   network_seed?: string;
@@ -73,6 +83,8 @@ export interface Challenge {
   expires_at?: string;
   metadata?: Record<string, unknown>;
   completed?: boolean;
+  /** Challenges sharing the same group are OR alternatives. */
+  group?: string;
 }
 
 export interface VerifyRequest {

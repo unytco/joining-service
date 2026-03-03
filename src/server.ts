@@ -8,12 +8,14 @@ import type { SessionStore } from './session/store.js';
 import { OpenAuthMethod } from './auth-methods/open.js';
 import { EmailCodeAuthMethod } from './auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from './auth-methods/invite-code.js';
+import { AgentWhitelistAuthMethod } from './auth-methods/agent-whitelist.js';
 import { FileTransport } from './email/file.js';
 import { PostmarkTransport } from './email/postmark.js';
 import { SendGridTransport } from './email/sendgrid.js';
 import { LairProofGenerator } from './membrane-proof/lair-signer.js';
 import type { MembraneProofGenerator } from './membrane-proof/generator.js';
 import type { AuthMethodPlugin } from './auth-methods/plugin.js';
+import type { AuthMethod, AuthMethodEntry } from './types.js';
 import type { EmailTransport } from './email/transport.js';
 import { StaticUrlProvider } from './urls/static.js';
 import type { UrlProvider } from './urls/provider.js';
@@ -43,13 +45,26 @@ function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
   return null;
 }
 
+/** Flatten AuthMethodEntry[] into unique AuthMethod names for plugin init. */
+function flattenMethods(entries: AuthMethodEntry[]): AuthMethod[] {
+  const seen = new Set<AuthMethod>();
+  for (const entry of entries) {
+    if (typeof entry === 'object' && 'any_of' in entry) {
+      for (const m of entry.any_of) seen.add(m);
+    } else {
+      seen.add(entry);
+    }
+  }
+  return [...seen];
+}
+
 function buildAuthPlugins(
   config: ServiceConfig,
   emailTransport: EmailTransport | null,
 ): Map<string, AuthMethodPlugin> {
   const plugins = new Map<string, AuthMethodPlugin>();
 
-  for (const method of config.auth_methods) {
+  for (const method of flattenMethods(config.auth_methods)) {
     switch (method) {
       case 'open':
         plugins.set('open', new OpenAuthMethod());
@@ -77,6 +92,13 @@ function buildAuthPlugins(
         plugins.set(
           'invite_code',
           new InviteCodeAuthMethod(config.invite_codes ?? []),
+        );
+        break;
+
+      case 'agent_whitelist':
+        plugins.set(
+          'agent_whitelist',
+          new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
         );
         break;
 

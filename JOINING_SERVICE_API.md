@@ -1,7 +1,7 @@
 # Holo Joining Service API Specification
 
 **Version**: 1.0.0-draft
-**Date**: 2026-03-02
+**Date**: 2026-03-03
 **Status**: Design specification
 
 ## Overview
@@ -104,7 +104,7 @@ Returns hApp metadata, available read-only gateways, supported auth methods, and
       "status": "available"
     }
   ],
-  "auth_methods": ["open", "email_code", "evm_signature"],
+  "auth_methods": ["invite_code", { "any_of": ["email_code", "sms_code"] }],
   "linker_info": {
     "selection_mode": "assigned",
     "region_hints": ["us-east", "eu-west"]
@@ -128,7 +128,7 @@ Returns hApp metadata, available read-only gateways, supported auth methods, and
 | `http_gateways[].dna_hashes` | string[] | yes | Base64-encoded DNA hashes served by this gateway |
 | `http_gateways[].status` | string | yes | `"available"`, `"degraded"`, or `"offline"` |
 | `http_gateways[].expires_at` | string (ISO 8601) | no | When this gateway entry expires. Absent means no known expiry. |
-| `auth_methods` | string[] | yes | Supported authentication methods (see Section 7) |
+| `auth_methods` | AuthMethodEntry[] | yes | Supported authentication methods (see Section 7). Each entry is either an `AuthMethod` string or an `{ any_of: AuthMethod[] }` group. Top-level entries are AND'd; methods within an `any_of` group are OR'd. |
 | `linker_info` | object | no | Absent when the service does not manage linker relay URLs (e.g. pure membrane-proof or gateway-only deployments) |
 | `linker_info.selection_mode` | string | if linker_info present | `"assigned"` (server picks linker) or `"client_choice"` (client picks from list) |
 | `linker_info.region_hints` | string[] | no | Available regions for latency optimization |
@@ -173,7 +173,15 @@ The client sends its agent key and optional identity claims. The server determin
       "id": "ch_email_1",
       "type": "email_code",
       "description": "Enter the 6-digit code sent to u***@example.com",
-      "expires_at": "2026-02-24T12:30:00Z"
+      "expires_at": "2026-02-24T12:30:00Z",
+      "group": "g_0"
+    },
+    {
+      "id": "ch_sms_1",
+      "type": "sms_code",
+      "description": "Enter the 6-digit code sent to +1***4567",
+      "expires_at": "2026-02-24T12:30:00Z",
+      "group": "g_0"
     }
   ],
   "poll_interval_ms": 2000
@@ -206,7 +214,8 @@ The client sends its agent key and optional identity claims. The server determin
 | `challenges[].type` | string | yes | Challenge type (matches `auth_methods` values) |
 | `challenges[].description` | string | yes | Human-readable instruction for the user |
 | `challenges[].expires_at` | string (ISO 8601) | no | When this challenge expires |
-| `challenges[].metadata` | object | no | Type-specific data (e.g., EVM signing payload) |
+| `challenges[].metadata` | object | no | Type-specific data (e.g., EVM signing payload, nonce for agent_whitelist) |
+| `challenges[].group` | string | no | OR group identifier. Challenges sharing the same group are alternatives -- completing any one satisfies the group. |
 | `reason` | string | if rejected | Human-readable rejection reason |
 | `poll_interval_ms` | number | if pending | Suggested polling interval in milliseconds |
 
@@ -531,7 +540,53 @@ Recommended limits:
 | `evm_signature` | `evm_address` | Sign message | hex signature `0x...` | Signing payload in `metadata` |
 | `solana_signature` | `solana_address` | Sign message | base58 signature | Signing payload in `metadata` |
 | `invite_code` | `invite_code` | none | N/A | Validated at join time |
+| `agent_whitelist` | none | Sign nonce | base64 ed25519 signature | Pre-approved agent keys only. Nonce in `metadata.nonce`. |
 | `x-*` | custom | custom | custom | Developer-defined methods |
+
+### Method Composition: AND / OR
+
+Top-level entries in `auth_methods` are AND'd together -- the agent must satisfy every entry. An `{ any_of: [...] }` entry creates an OR group: the agent must satisfy at least one method in the group.
+
+Example: invite code required, plus either email or SMS verification:
+```json
+{
+  "auth_methods": ["invite_code", { "any_of": ["email_code", "sms_code"] }]
+}
+```
+
+Challenges within the same OR group share a `group` field (e.g., `"g_0"`). The client can present these as alternatives and verify whichever the user completes.
+
+### Agent Whitelist Challenge
+
+The `agent_whitelist` method verifies that an agent's public key is in a pre-defined allow list. The server generates a random nonce; the agent signs it with their ed25519 private key to prove identity.
+
+- If the agent key is not in the allow list and the method is standalone (AND), the join is immediately rejected.
+- If the agent key is not in the allow list but the method is in an OR group, the other methods in the group can still satisfy it.
+
+Config:
+```json
+{
+  "auth_methods": ["agent_whitelist"],
+  "allowed_agents": ["uhCAk...base64-encoded-39-byte-AgentPubKey..."]
+}
+```
+
+Challenge metadata sent to client:
+```json
+{
+  "metadata": {
+    "nonce": "base64-encoded-32-random-bytes"
+  }
+}
+```
+
+Verify request:
+```json
+{
+  "challenge_id": "ch_agent_wl_1",
+  "response": "base64-encoded-ed25519-signature-of-nonce-bytes"
+}
+```
 
 ### EVM Signature Challenge Metadata
 
@@ -657,7 +712,64 @@ Agent (already joined)                  Joining Service
   ├─ [reconnect to new linker URLs] ────────►
 ```
 
-### 8.6 Multi-Step Verification (Email + KYC)
+### 8.6 OR Group (Email or SMS)
+
+```
+Client                                      Joining Service
+  │                                              │
+  ├─ GET /v1/info ───────────────────────────────►│
+  │◄─ { auth_methods: [                          │
+  │      { any_of: ["email_code","sms_code"] }   │
+  │    ] } ────────────────────────────────────────┤
+  │                                              │
+  ├─ POST /v1/join                               │
+  │  { agent_key,                                │
+  │    claims: { email: "u@ex.com",              │
+  │              phone: "+15551234" } } ─────────►│
+  │◄─ { session, status: "pending",              │
+  │     challenges: [                            │
+  │       { id: "ch_email_1",                    │
+  │         type: "email_code", group: "g_0" },  │
+  │       { id: "ch_sms_1",                      │
+  │         type: "sms_code", group: "g_0" }     │
+  │     ] } ───────────────────────────────────────┤
+  │                                              │
+  │  (user picks email, enters code)             │
+  │                                              │
+  ├─ POST /v1/join/{session}/verify              │
+  │  { challenge_id: "ch_email_1",              │
+  │    response: "482916" } ─────────────────────►│
+  │◄─ { status: "ready" } ────────────────────────┤
+  │                                              │
+  │  (SMS challenge was in same group,           │
+  │   completing either one is sufficient)       │
+```
+
+### 8.7 Agent Whitelist
+
+```
+Client                                      Joining Service
+  │                                              │
+  ├─ POST /v1/join { agent_key } ────────────────►│
+  │                                              │
+  │  (server checks agent_key is in allowed_agents)
+  │                                              │
+  │◄─ { session, status: "pending",              │
+  │     challenges: [{                           │
+  │       id: "ch_agent_wl_1",                   │
+  │       type: "agent_whitelist",               │
+  │       metadata: { nonce: "base64..." }       │
+  │     }] } ──────────────────────────────────────┤
+  │                                              │
+  │  (client signs nonce with agent ed25519 key) │
+  │                                              │
+  ├─ POST /v1/join/{session}/verify              │
+  │  { challenge_id: "ch_agent_wl_1",           │
+  │    response: "base64-signature" } ───────────►│
+  │◄─ { status: "ready" } ────────────────────────┤
+```
+
+### 8.8 Multi-Step Verification (Email + KYC)
 
 ```
 Client                                      Joining Service
@@ -713,7 +825,7 @@ interface JoiningServiceInfo {
     icon_url?: string;
   };
   http_gateways?: HttpGateway[];
-  auth_methods: AuthMethod[];
+  auth_methods: AuthMethodEntry[];
   linker_info?: {
     selection_mode: 'assigned' | 'client_choice';
     region_hints?: string[];
@@ -737,6 +849,9 @@ interface LinkerUrl {
   expires_at?: string;
 }
 
+/** Base64-encoded 39-byte Holochain AgentPubKey. */
+type AgentPubKeyB64 = string;
+
 type AuthMethod =
   | 'open'
   | 'email_code'
@@ -744,7 +859,14 @@ type AuthMethod =
   | 'evm_signature'
   | 'solana_signature'
   | 'invite_code'
+  | 'agent_whitelist'
   | `x-${string}`;
+
+interface AuthMethodGroup {
+  any_of: AuthMethod[];
+}
+
+type AuthMethodEntry = AuthMethod | AuthMethodGroup;
 
 interface DnaModifiers {
   network_seed?: string;
@@ -773,6 +895,8 @@ interface Challenge {
   expires_at?: string;
   metadata?: Record<string, unknown>;
   completed?: boolean;
+  /** Challenges sharing the same group are OR alternatives. */
+  group?: string;
 }
 
 // --- /v1/join/{session}/verify ---

@@ -131,18 +131,32 @@ Agent must prove control of an email address via 6-digit code.
 
 ### Profile 4: Multi-Factor
 
-Multiple auth methods combined. Agent must pass all configured challenges.
+Multiple auth methods combined. Top-level entries are AND'd; `{ any_of: [...] }` entries create OR groups where any one method suffices.
 
 | Setting | Value |
 |---------|-------|
-| `auth_methods` | `['email_code', 'invite_code']` |
+| `auth_methods` | `['invite_code', { any_of: ['email_code', 'sms_code'] }]` |
 | `email` | configured |
 | `invite_codes` | configured |
 | `membrane_proof` | optional |
 
-**Use cases**: Higher-trust networks, regulated applications.
+**Use cases**: Higher-trust networks, regulated applications, user-choice verification channels.
 
-**Flow**: Invite code verified at join time, email challenge issued. Agent must verify email code to reach `status: "ready"`.
+**Flow**: Invite code verified at join time. Email and SMS challenges issued as OR alternatives (same `group` id). Agent verifies whichever channel they prefer to reach `status: "ready"`.
+
+### Profile 4b: Agent Whitelist
+
+Pre-approved agent keys sign a nonce to prove identity. Can be standalone or combined with other methods in OR groups.
+
+| Setting | Value |
+|---------|-------|
+| `auth_methods` | `['agent_whitelist']` or `[{ any_of: ['agent_whitelist', 'invite_code'] }]` |
+| `allowed_agents` | `['uhCAk...', 'uhCAk...']` |
+| `membrane_proof` | optional |
+
+**Use cases**: Known-participant networks, testing with specific agent keys, fallback to invite codes for new agents.
+
+**Flow**: `POST /v1/join` checks if `agent_key` is in the allow list. If yes, returns a nonce challenge. Agent signs the nonce with their ed25519 key and submits via `POST /verify`. If in an OR group with other methods, non-whitelisted agents can use the alternatives.
 
 ---
 
@@ -152,7 +166,7 @@ All authorization layers active. Agent must pass auth challenges, receives signe
 
 | Setting | Value |
 |---------|-------|
-| `auth_methods` | `['email_code']` (or any combination) |
+| `auth_methods` | `['email_code']` (or any combination, including OR groups and `agent_whitelist`) |
 | `membrane_proof.enabled` | `true` |
 | `membrane_proof.signing_key_path` | path to persistent key |
 | `hc_auth.required` | `true` |
@@ -383,7 +397,9 @@ graph LR
 
 ## Auth Method Plugin Architecture
 
-Auth methods are composable plugins. Multiple methods can be active simultaneously—the agent must pass all configured challenges.
+Auth methods are composable plugins. Top-level entries in `auth_methods` are AND'd together. An `{ any_of: [...] }` entry creates an OR group where the agent must satisfy at least one method in the group.
+
+Example: `["invite_code", { "any_of": ["email_code", "sms_code"] }]` requires an invite code AND either email or SMS verification.
 
 ```mermaid
 graph TB
@@ -391,6 +407,7 @@ graph TB
         Open["open<br/>No challenge, immediate ready"]
         EmailCode["email_code<br/>6-digit code via email"]
         InviteCode["invite_code<br/>Single-use pre-issued codes"]
+        AgentWL["agent_whitelist<br/>Pre-approved agent keys<br/>sign nonce to prove identity"]
     end
 
     subgraph "Planned"
@@ -405,6 +422,7 @@ graph TB
     Open -.->|implements| Interface
     EmailCode -.->|implements| Interface
     InviteCode -.->|implements| Interface
+    AgentWL -.->|implements| Interface
     SMS -.->|implements| Interface
     EVM -.->|implements| Interface
     Solana -.->|implements| Interface

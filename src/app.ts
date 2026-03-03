@@ -5,7 +5,7 @@ import type { AuthMethodPlugin } from './auth-methods/plugin.js';
 import type { SessionStore, ChallengeState } from './session/store.js';
 import type { MembraneProofGenerator } from './membrane-proof/generator.js';
 import type { UrlProvider } from './urls/provider.js';
-import type { Challenge, LinkerUrl } from './types.js';
+import type { AuthMethodEntry, AuthMethodGroup, Challenge, LinkerUrl } from './types.js';
 import type { LinkerRegistration } from './linker-auth/types.js';
 import {
   generateSessionId,
@@ -85,6 +85,34 @@ async function notifyLinkers(
       `[linker-auth] authorization failed on ${failures.length}/${authable.length} linkers (non-fatal): ${summary}`,
     );
   }
+}
+
+function isGroup(entry: AuthMethodEntry): entry is AuthMethodGroup {
+  return typeof entry === 'object' && 'any_of' in entry;
+}
+
+/** OR-aware completion: ungrouped must all pass, each group needs at least one. */
+function allSatisfied(challenges: ChallengeState[]): boolean {
+  const groups = new Map<string, ChallengeState[]>();
+  const ungrouped: ChallengeState[] = [];
+
+  for (const cs of challenges) {
+    if (cs.group) {
+      const list = groups.get(cs.group) ?? [];
+      list.push(cs);
+      groups.set(cs.group, list);
+    } else {
+      ungrouped.push(cs);
+    }
+  }
+
+  if (!ungrouped.every((cs) => cs.completed)) return false;
+
+  for (const [, members] of groups) {
+    if (!members.some((cs) => cs.completed)) return false;
+  }
+
+  return true;
 }
 
 function errorJson(code: string, message: string, status: number) {
@@ -172,32 +200,93 @@ export function createApp(ctx: ServiceContext): Hono {
 
     const sessionId = generateSessionId();
     const allChallenges: ChallengeState[] = [];
+    let groupIndex = 0;
 
-    // Create challenges from each auth method
-    for (const method of ctx.config.auth_methods) {
-      const plugin = ctx.authPlugins.get(method);
-      if (!plugin) continue;
+    // Create challenges from each auth method entry
+    for (const entry of ctx.config.auth_methods) {
+      if (isGroup(entry)) {
+        // OR group: create challenges for each method, tag with shared group id
+        const groupId = `g_${groupIndex++}`;
+        let groupHasChallenges = false;
 
-      try {
-        const challenges = await plugin.createChallenges(
-          agent_key,
-          claims,
-          ctx.config,
-        );
-        for (const ch of challenges) {
-          allChallenges.push({
-            challenge: ch,
-            expected_response: (ch.metadata?.expected_code as string) ?? '',
-            completed: false,
-            attempts: 0,
-            expires_at: ch.expires_at
-              ? new Date(ch.expires_at).getTime()
-              : Date.now() + 600_000,
-          });
+        for (const method of entry.any_of) {
+          const plugin = ctx.authPlugins.get(method);
+          if (!plugin) continue;
+
+          try {
+            const challenges = await plugin.createChallenges(
+              agent_key,
+              claims,
+              ctx.config,
+            );
+            for (const ch of challenges) {
+              ch.group = groupId;
+              allChallenges.push({
+                challenge: ch,
+                expected_response: (ch.metadata?.expected_code as string) ?? '',
+                completed: false,
+                attempts: 0,
+                expires_at: ch.expires_at
+                  ? new Date(ch.expires_at).getTime()
+                  : Date.now() + 600_000,
+                group: groupId,
+              });
+              groupHasChallenges = true;
+            }
+          } catch {
+            // In an OR group, individual methods may fail (e.g. missing claims).
+            // That's fine as long as at least one method in the group succeeds.
+          }
         }
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : 'Unknown error';
-        return errorJson('missing_claims', message, 400);
+
+        // If no method in the OR group produced challenges, the group is unsatisfiable
+        if (!groupHasChallenges) {
+          return c.json(
+            {
+              session: sessionId,
+              status: 'rejected' as const,
+              reason: 'No eligible auth method in group',
+            },
+            201,
+          );
+        }
+      } else {
+        // AND: standalone method
+        const plugin = ctx.authPlugins.get(entry);
+        if (!plugin) continue;
+
+        try {
+          const challenges = await plugin.createChallenges(
+            agent_key,
+            claims,
+            ctx.config,
+          );
+          if (challenges.length === 0 && entry !== 'open') {
+            // Non-open method produced no challenges -- agent is not eligible
+            return c.json(
+              {
+                session: sessionId,
+                status: 'rejected' as const,
+                reason: 'Agent is not eligible for this auth method',
+              },
+              201,
+            );
+          }
+          for (const ch of challenges) {
+            allChallenges.push({
+              challenge: ch,
+              expected_response: (ch.metadata?.expected_code as string) ?? '',
+              completed: false,
+              attempts: 0,
+              expires_at: ch.expires_at
+                ? new Date(ch.expires_at).getTime()
+                : Date.now() + 600_000,
+            });
+          }
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : 'Unknown error';
+          return errorJson('missing_claims', message, 400);
+        }
       }
     }
 
@@ -230,8 +319,7 @@ export function createApp(ctx: ServiceContext): Hono {
       }
     }
 
-    const allCompleted = allChallenges.every((cs) => cs.completed);
-    const finalStatus = allCompleted ? 'ready' : status;
+    const finalStatus = allSatisfied(allChallenges) ? 'ready' : status;
 
     if (finalStatus === 'ready') {
       await notifyHcAuth(ctx, agent_key);
@@ -343,8 +431,7 @@ export function createApp(ctx: ServiceContext): Hono {
 
     challengeState.completed = true;
 
-    const allCompleted = session.challenges.every((cs) => cs.completed);
-    const newStatus = allCompleted ? 'ready' : 'pending';
+    const newStatus = allSatisfied(session.challenges) ? 'ready' : 'pending';
 
     await ctx.sessionStore.update(sessionId, {
       status: newStatus,
@@ -529,9 +616,9 @@ export function createApp(ctx: ServiceContext): Hono {
 
 function stripInternal(challenge: Challenge): Challenge {
   const { metadata, ...rest } = challenge;
-  // Strip expected_code from metadata before sending to client
+  // Strip server-side fields from metadata before sending to client
   if (metadata) {
-    const { expected_code: _, ...safeMetadata } = metadata as Record<
+    const { expected_code: _, agent_key: __, ...safeMetadata } = metadata as Record<
       string,
       unknown
     >;

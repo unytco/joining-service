@@ -18,6 +18,8 @@ export interface ChallengeState {
   completed: boolean;
   attempts: number;
   expires_at: number;
+  /** Challenges sharing the same group are OR alternatives. */
+  group?: string;
 }
 
 export interface SessionStore {
