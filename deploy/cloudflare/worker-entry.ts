@@ -8,6 +8,7 @@
 import { createApp, type ServiceContext } from '../../src/app.js';
 import { resolveConfig, type ServiceConfig } from '../../src/config.js';
 import { KvSessionStore } from '../../src/session/kv-store.js';
+import { KvUrlProvider } from '../../src/urls/kv.js';
 import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
@@ -103,6 +104,8 @@ export default {
       config.session?.ready_ttl_seconds ?? 86400,
     );
 
+    const urlProvider = new KvUrlProvider(env.SESSIONS);
+
     const emailTransport = buildEmailTransport(config);
     const authPlugins = buildAuthPlugins(config, emailTransport);
 
@@ -116,6 +119,7 @@ export default {
       sessionStore,
       authPlugins,
       proofGenerator,
+      urlProvider,
     };
 
     const app = createApp(context);
