@@ -25,6 +25,10 @@ export type { EmailTransport } from './email/transport.js';
 export { FileTransport } from './email/file.js';
 export { PostmarkTransport } from './email/postmark.js';
 
+// Linker auth
+export { LinkerAuthClient } from './linker-auth/index.js';
+export type { LinkerAdminInfo, LinkerRegistration, LinkerAuthConfig, LinkerCapability } from './linker-auth/index.js';
+
 // Membrane proof
 export type { MembraneProofGenerator } from './membrane-proof/generator.js';
 export { LairProofGenerator } from './membrane-proof/lair-signer.js';

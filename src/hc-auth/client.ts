@@ -22,7 +22,7 @@ export interface HcAuthConfig {
   /** Bearer token from the server's API_TOKENS config */
   api_token: string;
   /**
-   * Whether a failure to register/authorize should block credential issuance.
+   * Whether a failure to register/authorize should block provisioning.
    * Default: false (non-fatal — hc-auth outage does not break joining).
    */
   required?: boolean;

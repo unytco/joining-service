@@ -1,20 +1,21 @@
-import type { HttpGateway, LinkerUrl } from '../types.js';
+import type { HttpGateway } from '../types.js';
+import type { LinkerRegistration } from '../linker-auth/types.js';
 
 /**
- * Provides the current set of linker WebSocket URLs and HTTP gateway URLs.
+ * Provides the current set of linker registrations and HTTP gateway URLs.
  * Implementations may read from static config, Cloudflare KV, a database,
  * or any other dynamic source.
- *
- * Each URL entry carries an optional `expires_at` field so that clients can
- * know exactly when an individual URL stops being valid and reconnect proactively.
  */
 export interface UrlProvider {
   /**
-   * Returns the ordered list of linker URL entries for this deployment,
+   * Returns the list of linker registrations for this deployment,
    * or undefined if this service does not manage linker relay URLs.
-   * Each entry may include an optional `expires_at` (ISO 8601).
+   *
+   * Each registration includes the client-safe WSS URL and optional
+   * admin credentials. Registrations without admin credentials represent
+   * open linkers that require no authorization.
    */
-  getLinkerUrls(): Promise<LinkerUrl[] | undefined>;
+  getLinkerRegistrations(): Promise<LinkerRegistration[] | undefined>;
 
   /**
    * Returns the list of read-only HTTP gateway instances,

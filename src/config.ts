@@ -1,5 +1,6 @@
 import type { AuthMethod, DnaModifiers } from './types.js';
 import type { HcAuthConfig } from './hc-auth/index.js';
+import type { LinkerAuthConfig } from './linker-auth/index.js';
 
 export interface ServiceConfig {
   happ: {
@@ -41,6 +42,7 @@ export interface ServiceConfig {
   };
   port?: number;
   hc_auth?: HcAuthConfig;
+  linker_auth?: LinkerAuthConfig;
 }
 
 const DEFAULTS = {

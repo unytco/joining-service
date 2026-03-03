@@ -1,4 +1,5 @@
-import type { HttpGateway, LinkerUrl } from '../types.js';
+import type { HttpGateway } from '../types.js';
+import type { LinkerRegistration } from '../linker-auth/types.js';
 import type { UrlProvider } from './provider.js';
 
 /** Cloudflare KV namespace binding (subset of the Workers runtime type). */
@@ -15,19 +16,18 @@ export interface KVNamespace {
  * so updates written to KV are reflected without redeploying the worker.
  *
  * Expected KV keys:
- *   `linker_urls`    — JSON-encoded LinkerUrl[]
- *                      e.g. [{"url":"wss://l1.example.com:8090","expires_at":"2026-03-01T00:00:00Z"}]
- *   `http_gateways`  — JSON-encoded HttpGateway[]
+ *   `linker_registrations` — JSON-encoded LinkerRegistration[]
+ *   `http_gateways`        — JSON-encoded HttpGateway[]
  *
  * Either key may be absent; the provider returns undefined in that case.
  */
 export class KvUrlProvider implements UrlProvider {
   constructor(private readonly kv: KVNamespace) {}
 
-  async getLinkerUrls(): Promise<LinkerUrl[] | undefined> {
-    const raw = await this.kv.get('linker_urls');
+  async getLinkerRegistrations(): Promise<LinkerRegistration[] | undefined> {
+    const raw = await this.kv.get('linker_registrations');
     if (!raw) return undefined;
-    const entries = JSON.parse(raw) as LinkerUrl[];
+    const entries = JSON.parse(raw) as LinkerRegistration[];
     return entries.length ? entries : undefined;
   }
 

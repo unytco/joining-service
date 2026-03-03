@@ -5,7 +5,8 @@ import type { AuthMethodPlugin } from './auth-methods/plugin.js';
 import type { SessionStore, ChallengeState } from './session/store.js';
 import type { MembraneProofGenerator } from './membrane-proof/generator.js';
 import type { UrlProvider } from './urls/provider.js';
-import type { Challenge } from './types.js';
+import type { Challenge, LinkerUrl } from './types.js';
+import type { LinkerRegistration } from './linker-auth/types.js';
 import {
   generateSessionId,
   validateAgentKey,
@@ -14,6 +15,7 @@ import {
   agentKeyToRawEd25519Base64url,
 } from './utils.js';
 import type { HcAuthClient } from './hc-auth/index.js';
+import { LinkerAuthClient } from './linker-auth/index.js';
 import * as ed from '@noble/ed25519';
 
 export interface ServiceContext {
@@ -37,6 +39,51 @@ async function notifyHcAuth(
   } catch (err) {
     if (ctx.config.hc_auth?.required) throw err;
     console.error('[hc-auth] registerAndAuthorize failed (non-fatal):', err);
+  }
+}
+
+/** Extract client-safe LinkerUrl[] from registrations (strips admin fields). */
+function toLinkerUrls(
+  registrations: LinkerRegistration[] | undefined,
+): LinkerUrl[] | undefined {
+  return registrations?.map((r) => r.linker_url);
+}
+
+async function notifyLinkers(
+  ctx: ServiceContext,
+  agentKey: string,
+): Promise<void> {
+  if (!ctx.config.linker_auth) return;
+
+  const registrations = await ctx.urlProvider.getLinkerRegistrations();
+  // Only authorize on linkers that have admin credentials (skip open linkers)
+  const authable = registrations?.filter((r) => r.admin);
+  if (!authable?.length) return;
+
+  const { capabilities, required } = ctx.config.linker_auth;
+
+  const results = await Promise.allSettled(
+    authable.map((reg) => {
+      const client = new LinkerAuthClient(reg.admin!);
+      return client.authorizeAgent(agentKey, capabilities);
+    }),
+  );
+
+  const failures = results.filter(
+    (r): r is PromiseRejectedResult => r.status === 'rejected',
+  );
+
+  if (failures.length > 0) {
+    const summary = failures
+      .map((f) => (f.reason instanceof Error ? f.reason.message : String(f.reason)))
+      .join('; ');
+
+    if (required) {
+      throw new Error(`linker authorization failed: ${summary}`);
+    }
+    console.error(
+      `[linker-auth] authorization failed on ${failures.length}/${authable.length} linkers (non-fatal): ${summary}`,
+    );
   }
 }
 
@@ -74,7 +121,8 @@ export function createApp(ctx: ServiceContext): Hono {
   // ---- GET /v1/info ----
   app.get('/v1/info', async (c) => {
     const { config } = ctx;
-    const linkerUrls = await ctx.urlProvider.getLinkerUrls();
+    const registrations = await ctx.urlProvider.getLinkerRegistrations();
+    const linkerUrls = toLinkerUrls(registrations);
     const httpGateways = await ctx.urlProvider.getHttpGateways();
     return c.json({
       happ: {
@@ -187,6 +235,7 @@ export function createApp(ctx: ServiceContext): Hono {
 
     if (finalStatus === 'ready') {
       await notifyHcAuth(ctx, agent_key);
+      await notifyLinkers(ctx, agent_key);
     }
 
     await ctx.sessionStore.create({
@@ -304,6 +353,7 @@ export function createApp(ctx: ServiceContext): Hono {
 
     if (newStatus === 'ready') {
       await notifyHcAuth(ctx, session.agent_key);
+      await notifyLinkers(ctx, session.agent_key);
     }
 
     const resp: Record<string, unknown> = { status: newStatus };
@@ -360,7 +410,7 @@ export function createApp(ctx: ServiceContext): Hono {
       );
     }
 
-    const linkerUrls = await ctx.urlProvider.getLinkerUrls();
+    const linkerUrls = toLinkerUrls(await ctx.urlProvider.getLinkerRegistrations());
 
     let membraneProofs: Record<string, string> | undefined;
     if (ctx.proofGenerator && ctx.config.dna_hashes?.length) {
@@ -462,10 +512,11 @@ export function createApp(ctx: ServiceContext): Hono {
       );
     }
 
-    const [linkerUrls, httpGateways] = await Promise.all([
-      ctx.urlProvider.getLinkerUrls(),
+    const [registrations, httpGateways] = await Promise.all([
+      ctx.urlProvider.getLinkerRegistrations(),
       ctx.urlProvider.getHttpGateways(),
     ]);
+    const linkerUrls = toLinkerUrls(registrations);
 
     return c.json({
       linker_urls: linkerUrls,

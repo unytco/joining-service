@@ -160,8 +160,8 @@ export async function startServer(
 const configPath = process.argv[2] ?? './config.json';
 try {
   const raw = readFileSync(configPath, 'utf-8');
-  const { linker_urls, http_gateways, ...configInput } = JSON.parse(raw);
-  const urlProvider = new StaticUrlProvider(linker_urls, http_gateways);
+  const { linker_registrations, http_gateways, ...configInput } = JSON.parse(raw);
+  const urlProvider = new StaticUrlProvider(linker_registrations, http_gateways);
   startServer(configInput, urlProvider);
 } catch (e: unknown) {
   const message = e instanceof Error ? e.message : String(e);
