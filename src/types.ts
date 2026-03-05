@@ -50,6 +50,7 @@ export type AuthMethod =
   | 'solana_signature'
   | 'invite_code'
   | 'agent_whitelist'
+  | 'hc_auth_approval'
   | `x-${string}`;
 
 export interface AuthMethodGroup {

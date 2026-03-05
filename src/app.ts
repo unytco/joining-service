@@ -12,6 +12,7 @@ import {
   validateAgentKey,
   toBase64,
   fromBase64,
+  decodeHashFromBase64,
   agentKeyToRawEd25519Base64url,
 } from './utils.js';
 import type { HcAuthClient } from './hc-auth/index.js';
@@ -113,6 +114,11 @@ function allSatisfied(challenges: ChallengeState[]): boolean {
   }
 
   return true;
+}
+
+/** True if any challenge in the session used hc_auth_approval. */
+function usedHcAuthApproval(challenges: ChallengeState[]): boolean {
+  return challenges.some((cs) => cs.challenge.type === 'hc_auth_approval');
 }
 
 function errorJson(code: string, message: string, status: number) {
@@ -261,8 +267,8 @@ export function createApp(ctx: ServiceContext): Hono {
             claims,
             ctx.config,
           );
-          if (challenges.length === 0 && entry !== 'open') {
-            // Non-open method produced no challenges -- agent is not eligible
+          if (challenges.length === 0 && entry !== 'open' && entry !== 'hc_auth_approval') {
+            // Non-open/non-hc_auth_approval method produced no challenges -- agent is not eligible
             return c.json(
               {
                 session: sessionId,
@@ -322,7 +328,9 @@ export function createApp(ctx: ServiceContext): Hono {
     const finalStatus = allSatisfied(allChallenges) ? 'ready' : status;
 
     if (finalStatus === 'ready') {
-      await notifyHcAuth(ctx, agent_key);
+      if (!usedHcAuthApproval(allChallenges)) {
+        await notifyHcAuth(ctx, agent_key);
+      }
       await notifyLinkers(ctx, agent_key);
     }
 
@@ -439,7 +447,9 @@ export function createApp(ctx: ServiceContext): Hono {
     });
 
     if (newStatus === 'ready') {
-      await notifyHcAuth(ctx, session.agent_key);
+      if (!usedHcAuthApproval(session.challenges)) {
+        await notifyHcAuth(ctx, session.agent_key);
+      }
       await notifyLinkers(ctx, session.agent_key);
     }
 
@@ -461,6 +471,50 @@ export function createApp(ctx: ServiceContext): Hono {
 
     if (!session) {
       return errorJson('invalid_session', 'Session not found or expired', 401);
+    }
+
+    // Live-poll hc-auth for pending hc_auth_approval challenges
+    if (session.status === 'pending' && ctx.hcAuthClient) {
+      let changed = false;
+      for (const cs of session.challenges) {
+        if (cs.challenge.type !== 'hc_auth_approval' || cs.completed) continue;
+
+        const rawKey = cs.challenge.metadata?.raw_key as string | undefined;
+        if (!rawKey) continue;
+
+        try {
+          const record = await ctx.hcAuthClient.getRecord(rawKey);
+          if (record?.state === 'authorized') {
+            cs.completed = true;
+            changed = true;
+          } else if (record?.state === 'blocked') {
+            await ctx.sessionStore.update(sessionId, {
+              status: 'rejected',
+              reason: 'Agent blocked by administrator',
+              challenges: session.challenges,
+            });
+            return c.json({
+              status: 'rejected',
+              reason: 'Agent blocked by administrator',
+            });
+          }
+        } catch (err) {
+          console.error('[hc-auth] status poll failed:', err);
+        }
+      }
+
+      if (changed) {
+        const newStatus = allSatisfied(session.challenges) ? 'ready' : 'pending';
+        if (newStatus === 'ready') {
+          // hc-auth already authorized; only notify linkers
+          await notifyLinkers(ctx, session.agent_key);
+        }
+        await ctx.sessionStore.update(sessionId, {
+          status: newStatus,
+          challenges: session.challenges,
+        });
+        session.status = newStatus;
+      }
     }
 
     const resp: Record<string, unknown> = { status: session.status };
@@ -495,6 +549,26 @@ export function createApp(ctx: ServiceContext): Hono {
         `Session status is "${session.status}", not "ready"`,
         403,
       );
+    }
+
+    // Revocation check: if hc_auth_approval was used, verify still authorized
+    if (ctx.hcAuthClient && usedHcAuthApproval(session.challenges)) {
+      const rawKey = agentKeyToRawEd25519Base64url(session.agent_key);
+      try {
+        const record = await ctx.hcAuthClient.getRecord(rawKey);
+        if (record?.state === 'blocked') {
+          await ctx.sessionStore.update(sessionId, {
+            status: 'rejected',
+            reason: 'Agent blocked by administrator',
+          });
+          return errorJson('agent_revoked', 'Agent has been blocked by administrator', 403);
+        }
+      } catch (err) {
+        if (ctx.config.hc_auth?.required) {
+          return errorJson('service_unavailable', 'Auth service check failed', 503);
+        }
+        console.error('[hc-auth] provision revocation check failed (non-fatal):', err);
+      }
     }
 
     const linkerUrls = toLinkerUrls(await ctx.urlProvider.getLinkerRegistrations());
@@ -581,7 +655,7 @@ export function createApp(ctx: ServiceContext): Hono {
     const msgBytes = new TextEncoder().encode(timestamp);
     // Extract the raw 32-byte ed25519 public key from the 39-byte AgentPubKey
     // (skip 3-byte HoloHash prefix, take 32 bytes, skip 4-byte DHT location)
-    const agentKeyBytes = fromBase64(agent_key);
+    const agentKeyBytes = decodeHashFromBase64(agent_key);
     const publicKey = agentKeyBytes.slice(3, 35);
 
     let valid: boolean;
@@ -597,6 +671,22 @@ export function createApp(ctx: ServiceContext): Hono {
         'Signature does not verify against agent key',
         400,
       );
+    }
+
+    // Revocation check: if hc-auth is configured, verify agent is not blocked
+    if (ctx.hcAuthClient) {
+      const rawKey = agentKeyToRawEd25519Base64url(agent_key);
+      try {
+        const record = await ctx.hcAuthClient.getRecord(rawKey);
+        if (record?.state === 'blocked') {
+          return errorJson('agent_revoked', 'Agent has been blocked by administrator', 403);
+        }
+      } catch (err) {
+        if (ctx.config.hc_auth?.required) {
+          return errorJson('service_unavailable', 'Auth service check failed', 503);
+        }
+        console.error('[hc-auth] reconnect revocation check failed (non-fatal):', err);
+      }
     }
 
     const [registrations, httpGateways] = await Promise.all([
@@ -618,7 +708,7 @@ function stripInternal(challenge: Challenge): Challenge {
   const { metadata, ...rest } = challenge;
   // Strip server-side fields from metadata before sending to client
   if (metadata) {
-    const { expected_code: _, agent_key: __, ...safeMetadata } = metadata as Record<
+    const { expected_code: _, agent_key: __, raw_key: ___, ...safeMetadata } = metadata as Record<
       string,
       unknown
     >;

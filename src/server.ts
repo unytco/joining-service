@@ -9,6 +9,7 @@ import { OpenAuthMethod } from './auth-methods/open.js';
 import { EmailCodeAuthMethod } from './auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from './auth-methods/invite-code.js';
 import { AgentWhitelistAuthMethod } from './auth-methods/agent-whitelist.js';
+import { HcAuthApprovalMethod } from './auth-methods/hc-auth-approval.js';
 import { FileTransport } from './email/file.js';
 import { PostmarkTransport } from './email/postmark.js';
 import { SendGridTransport } from './email/sendgrid.js';
@@ -61,6 +62,7 @@ function flattenMethods(entries: AuthMethodEntry[]): AuthMethod[] {
 function buildAuthPlugins(
   config: ServiceConfig,
   emailTransport: EmailTransport | null,
+  hcAuthClient?: HcAuthClient,
 ): Map<string, AuthMethodPlugin> {
   const plugins = new Map<string, AuthMethodPlugin>();
 
@@ -99,6 +101,18 @@ function buildAuthPlugins(
         plugins.set(
           'agent_whitelist',
           new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
+        );
+        break;
+
+      case 'hc_auth_approval':
+        if (!hcAuthClient) {
+          throw new Error(
+            'hc_auth_approval auth method requires hc_auth config',
+          );
+        }
+        plugins.set(
+          'hc_auth_approval',
+          new HcAuthApprovalMethod(hcAuthClient),
         );
         break;
 
@@ -148,15 +162,15 @@ export async function startServer(
 
   const sessionStore = buildSessionStore(config);
 
-  const emailTransport = buildEmailTransport(config);
-  const authPlugins = buildAuthPlugins(config, emailTransport);
-  const proofGenerator = await buildProofGenerator(config);
-
-  const resolvedUrlProvider = urlProvider ?? new StaticUrlProvider();
-
   const hcAuthClient = config.hc_auth
     ? new HcAuthClient(config.hc_auth)
     : undefined;
+
+  const emailTransport = buildEmailTransport(config);
+  const authPlugins = buildAuthPlugins(config, emailTransport, hcAuthClient);
+  const proofGenerator = await buildProofGenerator(config);
+
+  const resolvedUrlProvider = urlProvider ?? new StaticUrlProvider();
 
   const context: ServiceContext = {
     config,
