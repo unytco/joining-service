@@ -68,15 +68,17 @@ graph LR
     end
     subgraph "Locked Down →"
         D["Multi-Factor<br/>Email + invite"]
+        D2["HC-Auth Approval<br/>Operator/KYC gate"]
         E["Full Stack<br/>Auth + proofs + linker auth<br/>+ HC-Auth"]
     end
 
-    A --> B --> C --> D --> E
+    A --> B --> C --> D --> D2 --> E
 
     style A fill:#2d6a2d,color:#fff
     style B fill:#4a7a2d,color:#fff
     style C fill:#7a7a2d,color:#fff
     style D fill:#7a4a2d,color:#fff
+    style D2 fill:#7a3a2d,color:#fff
     style E fill:#7a2d2d,color:#fff
 ```
 
@@ -157,6 +159,20 @@ Pre-approved agent keys sign a nonce to prove identity. Can be standalone or com
 **Use cases**: Known-participant networks, testing with specific agent keys, fallback to invite codes for new agents.
 
 **Flow**: `POST /v1/join` checks if `agent_key` is in the allow list. If yes, returns a nonce challenge. Agent signs the nonce with their ed25519 key and submits via `POST /verify`. If in an OR group with other methods, non-whitelisted agents can use the alternatives.
+
+### Profile 4c: HC-Auth Approval
+
+Delegates join decisions to the hc-auth server. The agent is registered as pending and an operator (or external KYC provider) approves or blocks them via the hc-auth ops console. The client polls `/status` until the decision is made. Revocation checks are enforced at provision and reconnect time.
+
+| Setting | Value |
+|---------|-------|
+| `auth_methods` | `['hc_auth_approval']` or combined in OR groups |
+| `hc_auth` | configured (server URL + credentials) |
+| `membrane_proof` | optional |
+
+**Use cases**: Operator-gated networks, KYC-required apps, manual review workflows.
+
+**Flow**: `POST /v1/join` registers agent as pending in hc-auth → `status: "pending"` with `hc_auth_approval` challenge → client polls `GET /status` → operator approves via hc-auth console → next poll returns `status: "ready"`. If blocked, returns `status: "rejected"`.
 
 ---
 
@@ -408,6 +424,7 @@ graph TB
         EmailCode["email_code<br/>6-digit code via email"]
         InviteCode["invite_code<br/>Single-use pre-issued codes"]
         AgentWL["agent_whitelist<br/>Pre-approved agent keys<br/>sign nonce to prove identity"]
+        HcApproval["hc_auth_approval<br/>Operator/KYC approval via<br/>hc-auth server polling"]
     end
 
     subgraph "Planned"
@@ -423,6 +440,7 @@ graph TB
     EmailCode -.->|implements| Interface
     InviteCode -.->|implements| Interface
     AgentWL -.->|implements| Interface
+    HcApproval -.->|implements| Interface
     SMS -.->|implements| Interface
     EVM -.->|implements| Interface
     Solana -.->|implements| Interface
