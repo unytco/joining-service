@@ -595,10 +595,6 @@ export function createApp(ctx: ServiceContext): Hono {
 
   // ---- POST /v1/reconnect ----
   app.post('/v1/reconnect', async (c) => {
-    if (!ctx.config.reconnect?.enabled) {
-      return errorJson('not_found', 'Reconnect is not enabled', 404);
-    }
-
     const body = await c.req.json();
     const { agent_key, timestamp, signature } = body;
 
@@ -621,7 +617,7 @@ export function createApp(ctx: ServiceContext): Hono {
 
     // Validate timestamp is within tolerance
     const toleranceSeconds =
-      ctx.config.reconnect.timestamp_tolerance_seconds ?? 300;
+      ctx.config.reconnect?.timestamp_tolerance_seconds ?? 300;
     const tsDate = new Date(timestamp);
     if (isNaN(tsDate.getTime())) {
       return errorJson(
@@ -687,6 +683,14 @@ export function createApp(ctx: ServiceContext): Hono {
         }
         console.error('[hc-auth] reconnect revocation check failed (non-fatal):', err);
       }
+    }
+
+    // Re-register agent with linkers (idempotent — handles linker restarts)
+    try {
+      await notifyLinkers(ctx, agent_key);
+    } catch (err) {
+      console.error('[reconnect] linker re-registration failed:', err);
+      // Non-fatal: still return URLs so client can attempt WS auth
     }
 
     const [registrations, httpGateways] = await Promise.all([

@@ -38,7 +38,6 @@ export interface ServiceConfig {
     ready_ttl_seconds?: number;
   };
   reconnect?: {
-    enabled: boolean;
     timestamp_tolerance_seconds?: number;
   };
   port?: number;
