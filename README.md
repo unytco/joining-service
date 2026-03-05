@@ -35,4 +35,4 @@ All fields in the provision response are optional. A minimal deployment serving 
 
 ## Status
 
-Implementation complete. Reference server, client library, and E2E tests are in `src/` and `test/`.
+Alpha implementation complete. Reference server, client library, and E2E tests are in `src/` and `test/`.

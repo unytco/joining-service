@@ -54,12 +54,22 @@ async function notifyLinkers(
   ctx: ServiceContext,
   agentKey: string,
 ): Promise<void> {
-  if (!ctx.config.linker_auth) return;
+  if (!ctx.config.linker_auth) {
+    console.log('[linker-auth] skipped: linker_auth not configured');
+    return;
+  }
 
   const registrations = await ctx.urlProvider.getLinkerRegistrations();
   // Only authorize on linkers that have admin credentials (skip open linkers)
   const authable = registrations?.filter((r) => r.admin);
-  if (!authable?.length) return;
+  if (!authable?.length) {
+    console.log('[linker-auth] skipped: no linker registrations with admin credentials',
+      { registrationCount: registrations?.length ?? 0 });
+    return;
+  }
+
+  console.log(`[linker-auth] authorizing agent on ${authable.length} linker(s)`,
+    { agentKey: agentKey.slice(0, 20) + '...', adminUrls: authable.map(r => r.admin!.url) });
 
   const { capabilities, required } = ctx.config.linker_auth;
 
@@ -73,6 +83,11 @@ async function notifyLinkers(
   const failures = results.filter(
     (r): r is PromiseRejectedResult => r.status === 'rejected',
   );
+
+  const successes = results.filter(r => r.status === 'fulfilled').length;
+  if (successes > 0) {
+    console.log(`[linker-auth] authorized agent on ${successes}/${authable.length} linker(s)`);
+  }
 
   if (failures.length > 0) {
     const summary = failures
