@@ -37,7 +37,7 @@ export { LairProofGenerator } from './membrane-proof/lair-signer.js';
 export * from './types.js';
 
 // Utilities
-export { validateAgentKey, generateSessionId, toBase64, fromBase64 } from './utils.js';
+export { validateAgentKey, generateSessionId, toBase64, fromBase64, decodeHashFromBase64, encodeHashToBase64, agentPubKeyFrom32, dhtLocationFrom32 } from './utils.js';
 
 // Client library (also available as '@holo-host/joining-service/client')
 export {

@@ -10,13 +10,16 @@ import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
 import { AgentWhitelistAuthMethod } from '../../src/auth-methods/agent-whitelist.js';
+import { HcAuthApprovalMethod } from '../../src/auth-methods/hc-auth-approval.js';
 import { FileTransport } from '../../src/email/file.js';
 import { LairProofGenerator } from '../../src/membrane-proof/lair-signer.js';
 import { StaticUrlProvider } from '../../src/urls/static.js';
 import { randomBytes } from 'node:crypto';
 import type { AuthMethodPlugin } from '../../src/auth-methods/plugin.js';
 import type { AuthMethod } from '../../src/types.js';
+import type { HcAuthClient } from '../../src/hc-auth/index.js';
 import type http from 'node:http';
+import { encodeHashToBase64, dhtLocationFrom32 } from '../../src/utils.js';
 
 export interface E2EServer {
   baseUrl: string;
@@ -36,6 +39,7 @@ const DEFAULT_CONFIG: Partial<ServiceConfig> = {
 
 export async function startE2EServer(
   configOverrides: Partial<ServiceConfig> = {},
+  hcAuthClient?: HcAuthClient,
 ): Promise<E2EServer> {
   const merged = { ...DEFAULT_CONFIG, ...configOverrides };
   if (configOverrides.happ) {
@@ -86,6 +90,14 @@ export async function startE2EServer(
           new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
         );
         break;
+      case 'hc_auth_approval':
+        if (hcAuthClient) {
+          authPlugins.set(
+            'hc_auth_approval',
+            new HcAuthApprovalMethod(hcAuthClient),
+          );
+        }
+        break;
     }
   }
 
@@ -102,6 +114,7 @@ export async function startE2EServer(
     authPlugins,
     proofGenerator,
     urlProvider,
+    hcAuthClient,
   };
 
   const app = createApp(ctx);
@@ -125,14 +138,18 @@ export async function startE2EServer(
   };
 }
 
-// A valid 39-byte AgentPubKey, base64-encoded
+/** Generate a fake AgentPubKey in HoloHash base64 format ("u" + base64url). */
 export function fakeAgentKey(seed = 0): string {
+  const core = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    core[i] = (seed + i + 3) & 0xff;
+  }
+  const loc = dhtLocationFrom32(core);
   const bytes = new Uint8Array(39);
   bytes[0] = 0x84;
   bytes[1] = 0x20;
   bytes[2] = 0x24;
-  for (let i = 3; i < 39; i++) {
-    bytes[i] = (seed + i) & 0xff;
-  }
-  return Buffer.from(bytes).toString('base64');
+  bytes.set(core, 3);
+  bytes.set(loc, 35);
+  return encodeHashToBase64(bytes);
 }

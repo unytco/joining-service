@@ -1,21 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import * as ed from '@noble/ed25519';
 import { createTestApp } from './helpers.js';
+import { encodeHashToBase64, agentPubKeyFrom32 } from '../src/utils.js';
 
 // Build a proper 39-byte AgentPubKey from a real ed25519 public key
 function buildAgentKey(publicKey: Uint8Array): string {
-  // 3-byte prefix + 32-byte pubkey + 4-byte DHT location
-  const bytes = new Uint8Array(39);
-  bytes[0] = 0x84;
-  bytes[1] = 0x20;
-  bytes[2] = 0x24;
-  bytes.set(publicKey, 3);
-  // Last 4 bytes are DHT location (can be anything)
-  bytes[35] = 0x00;
-  bytes[36] = 0x00;
-  bytes[37] = 0x00;
-  bytes[38] = 0x00;
-  return Buffer.from(bytes).toString('base64');
+  return encodeHashToBase64(agentPubKeyFrom32(publicKey));
 }
 
 describe('Reconnect flow', () => {

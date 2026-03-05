@@ -38,7 +38,7 @@ describe('agentKeyToRawEd25519Base64url', () => {
   });
 
   it('throws on invalid-length input', () => {
-    const short = Buffer.from(new Uint8Array(10)).toString('base64');
+    const short = `u${Buffer.from(new Uint8Array(10)).toString('base64url')}`;
     expect(() => agentKeyToRawEd25519Base64url(short)).toThrow('39 bytes');
   });
 });

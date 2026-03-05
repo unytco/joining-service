@@ -7,6 +7,7 @@ import { OpenAuthMethod } from '../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../src/auth-methods/invite-code.js';
 import { AgentWhitelistAuthMethod } from '../src/auth-methods/agent-whitelist.js';
+import { HcAuthApprovalMethod } from '../src/auth-methods/hc-auth-approval.js';
 import { FileTransport } from '../src/email/file.js';
 import { randomBytes } from 'node:crypto';
 import { LairProofGenerator } from '../src/membrane-proof/lair-signer.js';
@@ -16,19 +17,42 @@ import type { AuthMethodPlugin } from '../src/auth-methods/plugin.js';
 import type { HcAuthClient } from '../src/hc-auth/index.js';
 import type { AuthMethod, AuthMethodEntry } from '../src/types.js';
 import type { Hono } from 'hono';
+import { encodeHashToBase64, dhtLocationFrom32 } from '../src/utils.js';
 
-// A minimal valid 39-byte AgentPubKey, base64-encoded.
-// Prefix 0x84,0x20,0x24 + 32 bytes of key + 4 bytes of DHT location
+/**
+ * Generate a fake AgentPubKey in HoloHash base64 format ("u" + base64url).
+ * Computes a valid DHT location so the hash is well-formed.
+ */
 export function fakeAgentKey(seed = 0): string {
+  const core = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    core[i] = (seed + i + 3) & 0xff;
+  }
+  const loc = dhtLocationFrom32(core);
   const bytes = new Uint8Array(39);
   bytes[0] = 0x84;
   bytes[1] = 0x20;
   bytes[2] = 0x24;
-  // Fill remaining with deterministic data
-  for (let i = 3; i < 39; i++) {
-    bytes[i] = (seed + i) & 0xff;
+  bytes.set(core, 3);
+  bytes.set(loc, 35);
+  return encodeHashToBase64(bytes);
+}
+
+/** Generate a fake DnaHash in HoloHash base64 format ("u" + base64url). */
+export function fakeDnaHash(seed = 0): string {
+  const core = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    core[i] = (seed + i + 7) & 0xff;
   }
-  return Buffer.from(bytes).toString('base64');
+  const loc = dhtLocationFrom32(core);
+  const bytes = new Uint8Array(39);
+  // DnaHash prefix: 0x84, 0x2d, 0x24
+  bytes[0] = 0x84;
+  bytes[1] = 0x2d;
+  bytes[2] = 0x24;
+  bytes.set(core, 3);
+  bytes.set(loc, 35);
+  return encodeHashToBase64(bytes);
 }
 
 export interface TestApp {
@@ -115,6 +139,14 @@ export async function createTestApp(
             'agent_whitelist',
             new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
           );
+          break;
+        case 'hc_auth_approval':
+          if (hcAuthClient) {
+            authPlugins.set(
+              'hc_auth_approval',
+              new HcAuthApprovalMethod(hcAuthClient),
+            );
+          }
           break;
       }
     }

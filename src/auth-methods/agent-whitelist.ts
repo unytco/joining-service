@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import * as ed from '@noble/ed25519';
 import type { AgentPubKeyB64, Challenge } from '../types.js';
 import type { AuthMethodPlugin } from './plugin.js';
-import { fromBase64 } from '../utils.js';
+import { fromBase64, decodeHashFromBase64 } from '../utils.js';
 
 export class AgentWhitelistAuthMethod implements AuthMethodPlugin {
   type = 'agent_whitelist';
@@ -58,7 +58,7 @@ export class AgentWhitelistAuthMethod implements AuthMethodPlugin {
     const nonceBytes = fromBase64(nonce);
     // Extract raw 32-byte ed25519 public key from 39-byte AgentPubKey
     // (skip 3-byte HoloHash prefix, take 32 bytes, skip 4-byte DHT location)
-    const agentKeyBytes = fromBase64(agentKey);
+    const agentKeyBytes = decodeHashFromBase64(agentKey);
     const publicKey = agentKeyBytes.slice(3, 35);
 
     let valid: boolean;

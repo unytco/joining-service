@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { JoiningClient, JoiningError } from '../../src/client/index.js';
 import { startE2EServer, type E2EServer } from './helpers.js';
 import * as ed from '@noble/ed25519';
+import { encodeHashToBase64, agentPubKeyFrom32 } from '../../src/utils.js';
 
 // Generate a real ed25519 keypair and encode as a valid 39-byte AgentPubKey
 async function generateAgentKeypair(): Promise<{
@@ -11,20 +12,8 @@ async function generateAgentKeypair(): Promise<{
   const privateKey = ed.utils.randomPrivateKey();
   const publicKey = await ed.getPublicKeyAsync(privateKey);
 
-  // Build 39-byte AgentPubKey: [0x84, 0x20, 0x24] + 32-byte pubkey + 4-byte DHT location
-  const agentKeyBytes = new Uint8Array(39);
-  agentKeyBytes[0] = 0x84;
-  agentKeyBytes[1] = 0x20;
-  agentKeyBytes[2] = 0x24;
-  agentKeyBytes.set(publicKey, 3);
-  // DHT location bytes (arbitrary for testing)
-  agentKeyBytes[35] = 0x00;
-  agentKeyBytes[36] = 0x00;
-  agentKeyBytes[37] = 0x00;
-  agentKeyBytes[38] = 0x00;
-
   return {
-    agentKey: Buffer.from(agentKeyBytes).toString('base64'),
+    agentKey: encodeHashToBase64(agentPubKeyFrom32(publicKey)),
     privateKey,
   };
 }

@@ -16,7 +16,7 @@ This section is prerequisite reading before deploying with membrane proofs. Skip
 
 ### The bootstrap ordering problem
 
-The signing key is not an arbitrary key. The ed25519 public key derived from the seed must be embedded in the DNA's `properties` as the **progenitor** before the hApp bundle is compiled. The DNA's `genesis_self_check` Wasm callback validates every membrane proof by checking that its `signer_pub_key` field matches the progenitor embedded in the DNA at compile time.
+The signing key is not an arbitrary key. The ed25519 public key derived from the seed must be embedded in the DNA's `properties` as the **progenitor** before the hApp bundle is compiled. The DNA's `genesis_self_check` Wasm callback validates every membrane proof by checking that its `signer` field matches the progenitor embedded in the DNA at compile time.
 
 The ordering constraint is:
 
@@ -28,7 +28,7 @@ The ordering constraint is:
 5. Deploy joining service with the same seed
 ```
 
-Steps 1–4 must happen before step 5. If the key is lost or rotated after the DNA is compiled, you must rebuild and redeploy the hApp.
+Steps 1-4 must happen before step 5. If the key is lost or rotated after the DNA is compiled, you must rebuild and redeploy the hApp.
 
 ### Generating the key pair
 
@@ -38,34 +38,162 @@ Run the script in this repo once, before building the hApp bundle:
 npm run gen-signing-key
 ```
 
-The script ([scripts/gen-signing-key.ts](scripts/gen-signing-key.ts)) uses `@holo-host/lair` to derive the key pair through the same libsodium path used by `LairProofGenerator` at runtime, so the public key is guaranteed to match. Once `@holo-host/lair` is published to npm as a normal package the `NODE_OPTIONS=--preserve-symlinks` workaround in the npm script can be dropped — no logic change to the script required.
+The script ([scripts/gen-signing-key.ts](scripts/gen-signing-key.ts)) uses `@holo-host/lair` to derive the key pair through the same libsodium path used by `LairProofGenerator` at runtime, so the public key is guaranteed to match. Once `@holo-host/lair` is published to npm as a normal package the `NODE_OPTIONS=--preserve-symlinks` workaround in the npm script can be dropped -- no logic change to the script required.
 
 Store the seed hex in a secrets manager (Vault, AWS Secrets Manager, 1Password, etc.) or a 600-permissioned file on the server. **Never commit it to version control.**
 
-The `AgentPubKey` string (starting with `uhCAk`) goes into your DNA Rust source as the progenitor — typically in `dna.yaml` properties or hard-coded in `genesis_self_check`:
+The `AgentPubKey` string (starting with `uhCAk`) goes into your DNA's properties as the progenitor (see the DNA validation section below).
+
+After changing DNA properties the DNA hash changes, so all previously compiled bundles are invalidated.
+
+### Membrane proof wire format
+
+The joining service produces a `MembraneProof` (which in Holochain is `SerializedBytes` -- msgpack bytes). The wire format is:
+
+```
+MembraneProofEnvelope (msgpack map, named fields):
+  signature:  Uint8Array(64)   -- ed25519 signature over msgpack(data)
+  data:       MembraneProofData (msgpack map, named fields):
+    for_agent:  Uint8Array(39)   -- AgentPubKey bytes (binary, not base64)
+    dna_hash:   Uint8Array(39)   -- DnaHash bytes (binary, not base64)
+    timestamp:  String           -- ISO 8601
+    nonce:      String           -- random hex
+  signer:     Uint8Array(39)   -- signer's AgentPubKey bytes
+```
+
+All hash fields are raw 39-byte HoloHash binary in msgpack, matching how `AgentPubKey` and `DnaHash` serialize via `serde` in Holochain's `holo_hash` crate. This means the Rust side can deserialize them directly into native HoloHash types with no string parsing.
+
+### DNA-side validation (Rust integrity zome)
+
+Add these types and the validation function to your integrity zome. The pattern follows the established membrane proof approach used in Holochain apps (e.g. Volla chat):
+
+```rust
+use hdi::prelude::*;
+
+// -- Types for deserializing the membrane proof --
+
+#[derive(Serialize, Deserialize, Debug, SerializedBytes, Clone)]
+pub struct MembraneProofData {
+    pub for_agent: AgentPubKey,
+    pub dna_hash: DnaHash,
+    pub timestamp: String,
+    pub nonce: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, SerializedBytes)]
+pub struct MembraneProofEnvelope {
+    pub signature: Signature,
+    pub data: MembraneProofData,
+    pub signer: AgentPubKey,
+}
+
+// -- DNA properties (set at bundle compile time) --
+
+#[derive(Serialize, Deserialize, Debug, SerializedBytes, Clone)]
+pub struct Properties {
+    pub progenitor: AgentPubKey,
+}
+
+// -- Validation logic --
+
+pub fn check_membrane_proof(
+    agent_pub_key: AgentPubKey,
+    membrane_proof: Option<MembraneProof>,
+) -> ExternResult<ValidateCallbackResult> {
+    let info = dna_info()?;
+
+    let props = Properties::try_from(info.modifiers.properties)
+        .map_err(|e| wasm_error!(e))?;
+
+    match membrane_proof {
+        None => Ok(ValidateCallbackResult::Invalid(
+            "Membrane proof required".to_string(),
+        )),
+        Some(serialized_proof) => {
+            // 1. Deserialize the envelope from SerializedBytes
+            let envelope = MembraneProofEnvelope::try_from(
+                (*serialized_proof).clone()
+            ).map_err(|e| wasm_error!(e))?;
+
+            // 2. Verify the signer is the authorized progenitor
+            if envelope.signer != props.progenitor {
+                return Ok(ValidateCallbackResult::Invalid(
+                    "Signer is not the authorized progenitor".to_string(),
+                ));
+            }
+
+            // 3. Verify the proof is for this agent
+            if envelope.data.for_agent != agent_pub_key {
+                return Ok(ValidateCallbackResult::Invalid(
+                    "Membrane proof is not for this agent".to_string(),
+                ));
+            }
+
+            // 4. Verify the signature over the data
+            //    verify_signature re-serializes envelope.data with
+            //    rmp_serde::to_vec_named and verifies the ed25519 signature.
+            if verify_signature(
+                props.progenitor,
+                envelope.signature,
+                envelope.data,
+            )? {
+                Ok(ValidateCallbackResult::Valid)
+            } else {
+                Ok(ValidateCallbackResult::Invalid(
+                    "Membrane proof signature is invalid".to_string(),
+                ))
+            }
+        }
+    }
+}
+
+#[hdk_extern]
+pub fn genesis_self_check(
+    data: GenesisSelfCheckData,
+) -> ExternResult<ValidateCallbackResult> {
+    check_membrane_proof(data.agent_key, data.membrane_proof)
+}
+```
+
+The same `check_membrane_proof` function should also be called from your `validate` callback for `OpRecord::StoreRecord` when the record is an `AgentValidationPkg`:
+
+```rust
+#[hdk_extern]
+pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
+    match op.flattened::<(), ()>()? {
+        FlatOp::StoreRecord(OpRecord::CreateAgent {
+            agent_pub_key,
+            membrane_proof,
+        }) => check_membrane_proof(agent_pub_key, membrane_proof),
+        // ... other validation cases ...
+        _ => Ok(ValidateCallbackResult::Valid),
+    }
+}
+```
+
+This ensures that peers also validate the membrane proof, not just the joining agent.
+
+### DNA properties setup
+
+In your `dna.yaml`, add the progenitor key from `npm run gen-signing-key`:
 
 ```yaml
 # dna.yaml
 properties:
-  progenitor_pub_key: uhCAkXXXXXX...
+  progenitor: uhCAkXXXX...  # AgentPubKey from gen-signing-key output
 ```
 
-or in Rust:
+### Cross-language signature verification
 
-```rust
-// integrity zome
-use holochain_integrity_types::prelude::*;
+The joining service (TypeScript) signs with `@msgpack/msgpack` encode and `@holo-host/lair` for ed25519. The DNA (Rust) verifies with `hdi::prelude::verify_signature`, which re-serializes the `MembraneProofData` struct using `rmp_serde::to_vec_named` before checking the signature.
 
-#[hdk_extern]
-pub fn genesis_self_check(data: GenesisSelfCheckData) -> ExternResult<ValidateCallbackResult> {
-    let progenitor: AgentPubKey = AgentPubKey::try_from(
-        "uhCAkXXXXXX..."  // same key from gen-signing-key output
-    )?;
-    // verify data.membrane_proof was signed by progenitor ...
-}
-```
+For this to work, the msgpack bytes produced by both sides must be identical. This holds because:
 
-After changing DNA properties the DNA hash changes, so all previously compiled bundles are invalidated.
+1. Both use named-field map encoding (JS objects preserve insertion order; Rust structs serialize in declaration order)
+2. Hash fields are binary in both (Uint8Array in JS, `serialize_bytes` in Rust)
+3. String fields are plain msgpack strings in both
+
+The joining service's test suite (`test/membrane-proof.test.ts`) verifies this: it re-encodes the deserialized data and confirms the signature still verifies, simulating the same round-trip that `verify_signature` performs in WASM.
 
 ---
 
@@ -208,6 +336,88 @@ curl http://localhost:3000/v1/info
 | `reconnect.enabled` | boolean | true | Allow `POST /v1/reconnect` |
 | `base_url` | string | auto-detected | Override for `/.well-known/holo-joining` response |
 | `port` | number | 3000 | |
+| `hc_auth.url` | string | — | Base URL of hc-auth-server (e.g. `https://auth.example.com`) |
+| `hc_auth.api_token` | string | — | Bearer token from the server's `API_TOKENS` env var |
+| `hc_auth.required` | boolean | false | Block provisioning/reconnect if hc-auth is unreachable |
+
+---
+
+## hc-auth-server integration
+
+The joining service can integrate with [hc-auth-server](../hc-auth-server) in two modes: **notification** (joining service is the auth authority) or **approval** (hc-auth is the auth authority).
+
+### Notification mode (existing behavior)
+
+The joining service runs its own auth (email, invite code, whitelist, etc.) and notifies hc-auth after approval. The agent is automatically registered and authorized in hc-auth when the session reaches `ready`.
+
+```json
+{
+  "auth_methods": ["email_code"],
+  "email": { "provider": "postmark", "api_key": "...", "from": "join@example.com" },
+  "hc_auth": {
+    "url": "https://auth.example.com",
+    "api_token": "your-bearer-token"
+  }
+}
+```
+
+If hc-auth is unreachable, joining proceeds normally (unless `required: true`). The agent may fail to authenticate with the bootstrap server later, but the join itself is not blocked.
+
+### Approval mode
+
+Use `hc_auth_approval` as an auth method to delegate the approval decision to hc-auth. The agent is registered as `pending` in hc-auth at join time. The client polls `GET /status` until an operator approves (or blocks) the agent via the hc-auth ops console or an external KYC provider calls `/api/transition`.
+
+```json
+{
+  "auth_methods": ["hc_auth_approval"],
+  "hc_auth": {
+    "url": "https://auth.example.com",
+    "api_token": "your-bearer-token",
+    "required": true
+  }
+}
+```
+
+The flow:
+
+1. Client calls `POST /v1/join` with agent key
+2. Joining service registers agent as `pending` in hc-auth and returns a pending session
+3. Client polls `GET /v1/join/{session}/status`
+4. Operator approves via hc-auth ops console, or external system calls `POST /api/transition`
+5. Next status poll detects `authorized` in hc-auth, transitions session to `ready`
+6. Client calls `GET /provision` for membrane proofs and linker URLs
+
+Approval mode composes with other auth methods via AND/OR groups. For example, require email verification AND operator approval:
+
+```json
+{
+  "auth_methods": ["email_code", "hc_auth_approval"],
+  "email": { "provider": "postmark", "api_key": "...", "from": "join@example.com" },
+  "hc_auth": {
+    "url": "https://auth.example.com",
+    "api_token": "your-bearer-token",
+    "required": true
+  }
+}
+```
+
+Both challenges must complete before the session reaches `ready`.
+
+### Revocation behavior
+
+When `hc_auth_approval` is used, the joining service checks hc-auth state on every call to `/status`, `/provision`, and `/reconnect`. If the agent has been `blocked` in hc-auth:
+
+- `/status` returns `rejected` with reason `"Agent blocked by administrator"`
+- `/provision` returns 403 with error code `agent_revoked`
+- `/reconnect` returns 403 with error code `agent_revoked`
+
+When hc-auth is configured (even without `hc_auth_approval`), `/reconnect` also checks hc-auth state to prevent revoked agents from obtaining fresh linker URLs.
+
+### Prerequisites
+
+- A running hc-auth-server instance (see [hc-auth-server](../hc-auth-server) for setup)
+- The `api_token` must match a value in the server's `API_TOKENS` environment variable
+- For manual approval: the hc-auth ops console requires GitHub OAuth configuration
 
 ---
 

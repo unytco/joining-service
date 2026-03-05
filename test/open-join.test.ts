@@ -104,7 +104,7 @@ describe('Open join flow', () => {
 
   it('rejects agent key with wrong length', async () => {
     const { request } = await createTestApp();
-    const shortKey = Buffer.from(new Uint8Array(10)).toString('base64');
+    const shortKey = `u${Buffer.from(new Uint8Array(10)).toString('base64url')}`;
 
     const res = await request('/v1/join', {
       method: 'POST',

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as ed from '@noble/ed25519';
 import { createTestApp, fakeAgentKey } from './helpers.js';
+import { encodeHashToBase64, agentPubKeyFrom32 } from '../src/utils.js';
 
 async function generateAgentKeypair(): Promise<{
   agentKey: string;
@@ -9,14 +10,8 @@ async function generateAgentKeypair(): Promise<{
   const privateKey = ed.utils.randomPrivateKey();
   const publicKey = await ed.getPublicKeyAsync(privateKey);
 
-  const agentKeyBytes = new Uint8Array(39);
-  agentKeyBytes[0] = 0x84;
-  agentKeyBytes[1] = 0x20;
-  agentKeyBytes[2] = 0x24;
-  agentKeyBytes.set(publicKey, 3);
-
   return {
-    agentKey: Buffer.from(agentKeyBytes).toString('base64'),
+    agentKey: encodeHashToBase64(agentPubKeyFrom32(publicKey)),
     privateKey,
   };
 }
