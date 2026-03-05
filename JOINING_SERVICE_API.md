@@ -1,7 +1,7 @@
 # Holo Joining Service API Specification
 
 **Version**: 1.0.0-draft
-**Date**: 2026-03-03
+**Date**: 2026-03-05
 **Status**: Design specification
 
 ## Overview
@@ -369,6 +369,7 @@ Retrieve the provision data needed to connect to the Holochain network. Only ava
 |-------------|------|-------------|
 | 401 | `invalid_session` | Session token is invalid or expired |
 | 403 | `not_ready` | Session exists but status is not `"ready"` |
+| 403 | `agent_revoked` | Agent was blocked by administrator (hc_auth_approval revocation) |
 | 410 | `session_expired` | Session has expired; must start over |
 
 ---
@@ -427,6 +428,7 @@ This endpoint does **not** re-run verification challenges. Instead, the agent pr
 | 400 | `invalid_signature` | Signature does not verify against agent key |
 | 400 | `timestamp_out_of_range` | Timestamp is more than 5 minutes from server time |
 | 403 | `agent_not_joined` | This agent key has not completed joining |
+| 403 | `agent_revoked` | Agent was blocked by administrator (hc_auth_approval revocation) |
 | 429 | `rate_limited` | Too many reconnect attempts |
 
 ---
@@ -541,6 +543,7 @@ Recommended limits:
 | `solana_signature` | `solana_address` | Sign message | base58 signature | Signing payload in `metadata` |
 | `invite_code` | `invite_code` | none | N/A | Validated at join time |
 | `agent_whitelist` | none | Sign nonce | base64 ed25519 signature | Pre-approved agent keys only. Nonce in `metadata.nonce`. |
+| `hc_auth_approval` | none | none (server-side) | N/A (poll `/status`) | Operator/KYC approval via hc-auth server. No client-side challenge — client polls status until approved or blocked. |
 | `x-*` | custom | custom | custom | Developer-defined methods |
 
 ### Method Composition: AND / OR
@@ -585,6 +588,34 @@ Verify request:
 {
   "challenge_id": "ch_agent_wl_1",
   "response": "base64-encoded-ed25519-signature-of-nonce-bytes"
+}
+```
+
+### HC-Auth Approval
+
+The `hc_auth_approval` method delegates join decisions to the hc-auth server. No client-side challenge is issued — instead, the agent is registered as pending in hc-auth, and the client polls `GET /status` until an operator (or external KYC provider) approves or blocks the agent.
+
+- On `POST /v1/join`, the server registers the agent key with hc-auth in `pending` state.
+- If the agent is already `authorized` in hc-auth, the join succeeds immediately (no challenge).
+- If the agent is `blocked`, the join is immediately rejected.
+- Otherwise, a `hc_auth_approval` challenge is created. The client polls `/status` — the server live-polls hc-auth on each status request.
+- At provision and reconnect time, the server checks whether the agent is still authorized. If the agent has been blocked since joining, the request is rejected with `agent_revoked` (403).
+
+Config:
+```json
+{
+  "auth_methods": ["hc_auth_approval"],
+  "hc_auth": {
+    "server_url": "https://auth.example.com",
+    "required": true
+  }
+}
+```
+
+Can be combined in OR groups:
+```json
+{
+  "auth_methods": [{ "any_of": ["hc_auth_approval", "invite_code"] }]
 }
 ```
 
@@ -769,7 +800,41 @@ Client                                      Joining Service
   │◄─ { status: "ready" } ────────────────────────┤
 ```
 
-### 8.8 Multi-Step Verification (Email + KYC)
+### 8.8 HC-Auth Approval (Operator/KYC Gate)
+
+```
+Client                                      Joining Service          HC-Auth Server
+  │                                              │                        │
+  ├─ POST /v1/join { agent_key } ────────────────►│                        │
+  │                                              ├─ PUT /request-auth ────►│
+  │                                              │◄─ { state: "pending" } ─┤
+  │◄─ { session, status: "pending",              │                        │
+  │     challenges: [{                           │                        │
+  │       id: "ch_hc_approval_1",                │                        │
+  │       type: "hc_auth_approval",              │                        │
+  │       description: "Awaiting approval" }]    │                        │
+  │   } ─────────────────────────────────────────┤                        │
+  │                                              │                        │
+  │  (client polls status)                       │                        │
+  ├─ GET /v1/join/{session}/status ──────────────►│                        │
+  │                                              ├─ GET /api/record ──────►│
+  │                                              │◄─ { state: "pending" } ─┤
+  │◄─ { status: "pending" } ─────────────────────┤                        │
+  │                                              │                        │
+  │  (operator approves via hc-auth console)     │                        │
+  │                                              │                        │
+  ├─ GET /v1/join/{session}/status ──────────────►│                        │
+  │                                              ├─ GET /api/record ──────►│
+  │                                              │◄─ { state: "authorized" }
+  │◄─ { status: "ready" } ───────────────────────┤                        │
+  │                                              │                        │
+  ├─ GET /v1/join/{session}/provision ──────────►│                        │
+  │                                              ├─ GET /api/record ──────►│
+  │                                              │◄─ { state: "authorized" }
+  │◄─ { linker_urls, membrane_proofs } ──────────┤                        │
+```
+
+### 8.9 Multi-Step Verification (Email + KYC)
 
 ```
 Client                                      Joining Service
@@ -860,6 +925,7 @@ type AuthMethod =
   | 'solana_signature'
   | 'invite_code'
   | 'agent_whitelist'
+  | 'hc_auth_approval'
   | `x-${string}`;
 
 interface AuthMethodGroup {
