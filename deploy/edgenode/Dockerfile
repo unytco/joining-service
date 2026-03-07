@@ -12,6 +12,14 @@
 #   - /data/ui/  (static UI assets, can be bind-mounted)
 
 # ---- Stage 1: Build ----
+#
+# NOTE: @holo-host/lair is currently a file: dependency pointing at
+# ../holo-web-conductor/packages/lair. Until it is published to npm,
+# you must either:
+#   a) publish @holo-host/lair to a registry, or
+#   b) expand the build context to include the lair package and adjust
+#      the file: path in package.json accordingly.
+#
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -24,7 +32,7 @@ RUN npm run build
 FROM cgr.dev/chainguard/wolfi-base
 
 RUN apk update && apk add --no-cache \
-  bash nodejs-20 npm tini nginx coreutils
+  bash nodejs-20 npm tini nginx coreutils gosu
 
 # Create non-root user (matches edgenode UID 65532)
 RUN adduser -D -u 65532 nonroot nonroot || true

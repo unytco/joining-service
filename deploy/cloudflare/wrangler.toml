@@ -11,6 +11,20 @@ preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
 # Routes: Worker handles /v1/* and /.well-known/* on your domain.
 # Static UI assets are served by Cloudflare Pages on the same domain.
 #
+# If deploying alongside Cloudflare Pages on a custom domain, add route
+# patterns so only API paths hit the Worker:
+#
+# [[routes]]
+# pattern = "example.com/v1/*"
+# zone_name = "example.com"
+#
+# [[routes]]
+# pattern = "example.com/.well-known/holo-joining"
+# zone_name = "example.com"
+#
+# If deploying the Worker standalone (workers.dev or sole custom domain),
+# no routes section is needed -- all traffic goes to the Worker.
+#
 # To deploy:
 #   1. Create the KV namespace:
 #      npx wrangler kv:namespace create SESSIONS
