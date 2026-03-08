@@ -92,14 +92,14 @@ export class LairProofGenerator implements MembraneProofGenerator {
       const timestamp = new Date().toISOString();
 
       // Decode DNA hash to raw 39-byte DnaHash
-      const dnaHashBytes = decodeHashFromBase64(dnaHash);
+      // const dnaHashBytes = decodeHashFromBase64(dnaHash);
 
       // Data struct: fields must match Rust struct declaration order exactly
       // so that rmp_serde::to_vec_named produces identical bytes for
       // verify_signature to work cross-language.
       const data = {
         for_agent: agentKeyBytes,
-        dna_hash: dnaHashBytes,
+        dna_hash: dnaHash,
         timestamp,
         nonce,
       };

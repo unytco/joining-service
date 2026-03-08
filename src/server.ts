@@ -1,44 +1,44 @@
-import { readFileSync } from 'node:fs';
-import { serve } from '@hono/node-server';
-import { resolveConfig, type ServiceConfig } from './config.js';
-import { createApp, type ServiceContext } from './app.js';
-import { MemorySessionStore } from './session/memory-store.js';
-import { SqliteSessionStore } from './session/sqlite-store.js';
-import type { SessionStore } from './session/store.js';
-import { OpenAuthMethod } from './auth-methods/open.js';
-import { EmailCodeAuthMethod } from './auth-methods/email-code.js';
-import { InviteCodeAuthMethod } from './auth-methods/invite-code.js';
-import { AgentWhitelistAuthMethod } from './auth-methods/agent-whitelist.js';
-import { HcAuthApprovalMethod } from './auth-methods/hc-auth-approval.js';
-import { FileTransport } from './email/file.js';
-import { PostmarkTransport } from './email/postmark.js';
-import { SendGridTransport } from './email/sendgrid.js';
-import { LairProofGenerator } from './membrane-proof/lair-signer.js';
-import type { MembraneProofGenerator } from './membrane-proof/generator.js';
-import type { AuthMethodPlugin } from './auth-methods/plugin.js';
-import type { AuthMethod, AuthMethodEntry } from './types.js';
-import type { EmailTransport } from './email/transport.js';
-import { StaticUrlProvider } from './urls/static.js';
-import type { UrlProvider } from './urls/provider.js';
-import { HcAuthClient } from './hc-auth/index.js';
+import { readFileSync } from "node:fs";
+import { serve } from "@hono/node-server";
+import { resolveConfig, type ServiceConfig } from "./config.js";
+import { createApp, type ServiceContext } from "./app.js";
+import { MemorySessionStore } from "./session/memory-store.js";
+import { SqliteSessionStore } from "./session/sqlite-store.js";
+import type { SessionStore } from "./session/store.js";
+import { OpenAuthMethod } from "./auth-methods/open.js";
+import { EmailCodeAuthMethod } from "./auth-methods/email-code.js";
+import { InviteCodeAuthMethod } from "./auth-methods/invite-code.js";
+import { AgentWhitelistAuthMethod } from "./auth-methods/agent-whitelist.js";
+import { HcAuthApprovalMethod } from "./auth-methods/hc-auth-approval.js";
+import { FileTransport } from "./email/file.js";
+import { PostmarkTransport } from "./email/postmark.js";
+import { SendGridTransport } from "./email/sendgrid.js";
+import { LairProofGenerator } from "./membrane-proof/lair-signer.js";
+import type { MembraneProofGenerator } from "./membrane-proof/generator.js";
+import type { AuthMethodPlugin } from "./auth-methods/plugin.js";
+import type { AuthMethod, AuthMethodEntry } from "./types.js";
+import type { EmailTransport } from "./email/transport.js";
+import { StaticUrlProvider } from "./urls/static.js";
+import type { UrlProvider } from "./urls/provider.js";
+import { HcAuthClient } from "./hc-auth/index.js";
 
 function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
   if (!config.email) return null;
 
-  if (config.email.provider === 'file') {
-    return new FileTransport(config.email.output_dir ?? './dev-emails');
+  if (config.email.provider === "file") {
+    return new FileTransport(config.email.output_dir ?? "./dev-emails");
   }
 
-  if (config.email.provider === 'postmark') {
+  if (config.email.provider === "postmark") {
     if (!config.email.api_key || !config.email.from) {
-      throw new Error('Postmark requires api_key and from');
+      throw new Error("Postmark requires api_key and from");
     }
     return new PostmarkTransport(config.email.api_key, config.email.from);
   }
 
-  if (config.email.provider === 'sendgrid') {
+  if (config.email.provider === "sendgrid") {
     if (!config.email.api_key || !config.email.from) {
-      throw new Error('SendGrid requires api_key and from');
+      throw new Error("SendGrid requires api_key and from");
     }
     return new SendGridTransport(config.email.api_key, config.email.from);
   }
@@ -50,7 +50,7 @@ function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
 function flattenMethods(entries: AuthMethodEntry[]): AuthMethod[] {
   const seen = new Set<AuthMethod>();
   for (const entry of entries) {
-    if (typeof entry === 'object' && 'any_of' in entry) {
+    if (typeof entry === "object" && "any_of" in entry) {
       for (const m of entry.any_of) seen.add(m);
     } else {
       seen.add(entry);
@@ -68,52 +68,37 @@ function buildAuthPlugins(
 
   for (const method of flattenMethods(config.auth_methods)) {
     switch (method) {
-      case 'open':
-        plugins.set('open', new OpenAuthMethod());
+      case "open":
+        plugins.set("open", new OpenAuthMethod());
         break;
 
-      case 'email_code':
+      case "email_code":
         if (!emailTransport) {
-          throw new Error(
-            'email_code auth requires email config with a transport',
-          );
+          throw new Error("email_code auth requires email config with a transport");
         }
         plugins.set(
-          'email_code',
+          "email_code",
           new EmailCodeAuthMethod({
             transport: emailTransport,
-            subject: config.email?.template
-              ? undefined
-              : 'Your verification code',
+            subject: config.email?.template ? undefined : "Your verification code",
             template: config.email?.template,
           }),
         );
         break;
 
-      case 'invite_code':
-        plugins.set(
-          'invite_code',
-          new InviteCodeAuthMethod(config.invite_codes ?? []),
-        );
+      case "invite_code":
+        plugins.set("invite_code", new InviteCodeAuthMethod(config.invite_codes ?? []));
         break;
 
-      case 'agent_whitelist':
-        plugins.set(
-          'agent_whitelist',
-          new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
-        );
+      case "agent_whitelist":
+        plugins.set("agent_whitelist", new AgentWhitelistAuthMethod(config.allowed_agents ?? []));
         break;
 
-      case 'hc_auth_approval':
+      case "hc_auth_approval":
         if (!hcAuthClient) {
-          throw new Error(
-            'hc_auth_approval auth method requires hc_auth config',
-          );
+          throw new Error("hc_auth_approval auth method requires hc_auth config");
         }
-        plugins.set(
-          'hc_auth_approval',
-          new HcAuthApprovalMethod(hcAuthClient),
-        );
+        plugins.set("hc_auth_approval", new HcAuthApprovalMethod(hcAuthClient));
         break;
 
       default:
@@ -124,30 +109,30 @@ function buildAuthPlugins(
   return plugins;
 }
 
-async function buildProofGenerator(
-  config: ServiceConfig,
-): Promise<MembraneProofGenerator | undefined> {
+async function buildProofGenerator(config: ServiceConfig): Promise<MembraneProofGenerator | undefined> {
   if (!config.membrane_proof?.enabled) return undefined;
 
   if (config.membrane_proof.signing_key_path) {
-    const keyHex = readFileSync(
-      config.membrane_proof.signing_key_path,
-      'utf-8',
-    ).trim();
+    const keyHex = readFileSync(config.membrane_proof.signing_key_path, "utf-8").trim();
     return LairProofGenerator.fromHex(keyHex);
   }
 
   // Generate ephemeral key for dev
-  const { randomBytes } = await import('node:crypto');
-  return LairProofGenerator.fromSeed(randomBytes(32));
+  const { randomBytes } = await import("node:crypto");
+  const generator = await LairProofGenerator.fromSeed(randomBytes(32));
+  console.log(
+    "Ephemeral membrane proof signer (embed as joining_server_signer in DNA properties):",
+    generator.signerAgentPubKeyB64,
+  );
+  return generator;
 }
 
 function buildSessionStore(config: ServiceConfig): SessionStore {
   const pendingTtl = config.session!.pending_ttl_seconds;
   const readyTtl = config.session!.ready_ttl_seconds;
 
-  if (config.session!.store === 'sqlite') {
-    const dbPath = config.session!.db_path ?? './sessions.db';
+  if (config.session!.store === "sqlite") {
+    const dbPath = config.session!.db_path ?? "./sessions.db";
     return new SqliteSessionStore(dbPath, pendingTtl, readyTtl);
   }
 
@@ -162,9 +147,7 @@ export async function startServer(
 
   const sessionStore = buildSessionStore(config);
 
-  const hcAuthClient = config.hc_auth
-    ? new HcAuthClient(config.hc_auth)
-    : undefined;
+  const hcAuthClient = config.hc_auth ? new HcAuthClient(config.hc_auth) : undefined;
 
   const emailTransport = buildEmailTransport(config);
   const authPlugins = buildAuthPlugins(config, emailTransport, hcAuthClient);
@@ -193,9 +176,9 @@ export async function startServer(
 }
 
 // CLI entry point
-const configPath = process.argv[2] ?? './config.json';
+const configPath = process.argv[2] ?? "./config.json";
 try {
-  const raw = readFileSync(configPath, 'utf-8');
+  const raw = readFileSync(configPath, "utf-8");
   const { linker_registrations, http_gateways, ...configInput } = JSON.parse(raw);
   const urlProvider = new StaticUrlProvider(linker_registrations, http_gateways);
   startServer(configInput, urlProvider);
