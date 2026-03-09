@@ -26,6 +26,13 @@ export interface HcAuthConfig {
    * Default: false (non-fatal — hc-auth outage does not break joining).
    */
   required?: boolean;
+  /**
+   * Claim keys to forward as metadata to hc-auth (e.g. ["email", "phone"]).
+   * When set, matching claims from the join session are included in the
+   * metadata payload sent during registerAndAuthorize.
+   * Default: undefined (no claims forwarded).
+   */
+  forward_claims?: string[];
 }
 
 export type AgentState = 'pending' | 'authorized' | 'blocked';

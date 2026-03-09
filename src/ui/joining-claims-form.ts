@@ -8,11 +8,31 @@ const AUTO_METHODS: Set<AuthMethod> = new Set([
   'agent_whitelist',
 ]);
 
-/** Methods with built-in claim inputs. */
-const CLAIM_INPUT: Record<string, { label: string; type: string; placeholder: string }> = {
-  invite_code: { label: 'Invite Code', type: 'text', placeholder: 'Enter your invite code' },
-  email_code: { label: 'Email', type: 'email', placeholder: 'you@example.com' },
-  sms_code: { label: 'Phone Number', type: 'tel', placeholder: '+1 555 123 4567' },
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Methods with built-in claim inputs. claimKey is the key sent to the server. */
+const CLAIM_INPUT: Record<string, { label: string; type: string; placeholder: string; claimKey: string; description: string }> = {
+  invite_code: {
+    label: 'Invite Code',
+    type: 'text',
+    placeholder: 'Enter your invite code',
+    claimKey: 'invite_code',
+    description: 'To join this network you need an invite code.',
+  },
+  email_code: {
+    label: 'Email',
+    type: 'email',
+    placeholder: 'you@example.com',
+    claimKey: 'email',
+    description: 'To join this network, please provide your email address. A verification code will be sent to you.',
+  },
+  sms_code: {
+    label: 'Phone Number',
+    type: 'tel',
+    placeholder: '+1 555 123 4567',
+    claimKey: 'phone',
+    description: 'To join this network, please provide your phone number. A verification code will be sent to you.',
+  },
 };
 
 export interface ClaimsSubmittedDetail {
@@ -76,7 +96,12 @@ export class JoiningClaimsForm extends LitElement {
   private isValid(): boolean {
     const methods = this.getInteractiveMethods();
     const activeFields = this.getActiveFields(methods);
-    return activeFields.every((m) => (this.values[m] ?? '').trim().length > 0);
+    return activeFields.every((m) => {
+      const val = (this.values[m] ?? '').trim();
+      if (!val) return false;
+      if (CLAIM_INPUT[m]?.type === 'email' && !EMAIL_RE.test(val)) return false;
+      return true;
+    });
   }
 
   /** Get the methods whose inputs should currently be shown (respecting OR group selection). */
@@ -111,7 +136,8 @@ export class JoiningClaimsForm extends LitElement {
     const claims: Record<string, string> = {};
     for (const m of activeFields) {
       const val = (this.values[m] ?? '').trim();
-      if (val) claims[m] = val;
+      const key = CLAIM_INPUT[m]?.claimKey ?? m;
+      if (val) claims[key] = val;
     }
 
     this.dispatchEvent(
@@ -141,7 +167,16 @@ export class JoiningClaimsForm extends LitElement {
       groups.get(key)!.push(entry);
     }
 
+    const activeFields = this.getActiveFields(methods);
+    const descriptions = [...new Set(
+      activeFields.map((m) => CLAIM_INPUT[m]?.description).filter(Boolean),
+    )];
+
     return html`
+      <h3 part="heading">Verification Required</h3>
+      ${descriptions.length > 0
+        ? html`<p part="description">${descriptions[0]}</p>`
+        : nothing}
       <form
         part="form"
         @submit=${this.handleSubmit}

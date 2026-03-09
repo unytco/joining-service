@@ -12,10 +12,30 @@ import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
 
 const AUTO_METHODS: Set<AuthMethod> = new Set(['open', 'agent_whitelist']);
 
-const CLAIM_INPUT: Record<string, { label: string; type: string; placeholder: string }> = {
-  invite_code: { label: 'Invite Code', type: 'text', placeholder: 'Enter your invite code' },
-  email_code: { label: 'Email', type: 'email', placeholder: 'you@example.com' },
-  sms_code: { label: 'Phone Number', type: 'tel', placeholder: '+1 555 123 4567' },
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const CLAIM_INPUT: Record<string, { label: string; type: string; placeholder: string; claimKey: string; description: string }> = {
+  invite_code: {
+    label: 'Invite Code',
+    type: 'text',
+    placeholder: 'Enter your invite code',
+    claimKey: 'invite_code',
+    description: 'To join this network you need an invite code.',
+  },
+  email_code: {
+    label: 'Email',
+    type: 'email',
+    placeholder: 'you@example.com',
+    claimKey: 'email',
+    description: 'To join this network, please provide your email address. A verification code will be sent to you.',
+  },
+  sms_code: {
+    label: 'Phone Number',
+    type: 'tel',
+    placeholder: '+1 555 123 4567',
+    claimKey: 'phone',
+    description: 'To join this network, please provide your phone number. A verification code will be sent to you.',
+  },
 };
 
 @customElement('joining-claims-form-sl')
@@ -25,6 +45,17 @@ export class JoiningClaimsFormSl extends LitElement {
       display: block;
       font-family: var(--sl-font-sans);
     }
+    .heading {
+      font-size: var(--sl-font-size-large);
+      font-weight: var(--sl-font-weight-semibold, 600);
+      margin: 0 0 0.5rem 0;
+    }
+    .description {
+      color: var(--sl-color-neutral-800);
+      font-size: var(--sl-font-size-medium);
+      line-height: 1.5;
+      margin-bottom: var(--joining-field-spacing, 1rem);
+    }
     .form-field {
       margin-bottom: var(--joining-field-spacing, 1rem);
     }
@@ -33,6 +64,12 @@ export class JoiningClaimsFormSl extends LitElement {
       gap: var(--joining-action-gap, 0.5rem);
       justify-content: flex-end;
       margin-top: var(--joining-action-margin-top, 1.5rem);
+    }
+    /* Ensure button text is vertically centered */
+    .actions sl-button::part(label) {
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .or-group {
       border: 1px solid var(--sl-color-neutral-200);
@@ -98,7 +135,12 @@ export class JoiningClaimsFormSl extends LitElement {
   private isValid(): boolean {
     const methods = this.getInteractiveMethods();
     const activeFields = this.getActiveFields(methods);
-    return activeFields.every((m) => (this.values[m] ?? '').trim().length > 0);
+    return activeFields.every((m) => {
+      const val = (this.values[m] ?? '').trim();
+      if (!val) return false;
+      if (CLAIM_INPUT[m]?.type === 'email' && !EMAIL_RE.test(val)) return false;
+      return true;
+    });
   }
 
   private handleInput(method: string, value: string) {
@@ -122,7 +164,8 @@ export class JoiningClaimsFormSl extends LitElement {
     const claims: Record<string, string> = {};
     for (const m of activeFields) {
       const val = (this.values[m] ?? '').trim();
-      if (val) claims[m] = val;
+      const key = CLAIM_INPUT[m]?.claimKey ?? m;
+      if (val) claims[key] = val;
     }
 
     this.dispatchEvent(
@@ -132,6 +175,10 @@ export class JoiningClaimsFormSl extends LitElement {
         composed: true,
       }),
     );
+  }
+
+  private hasOrGroups(): boolean {
+    return this.authMethods.some((entry) => typeof entry !== 'string' && 'any_of' in entry);
   }
 
   private handleCancel() {
@@ -151,7 +198,17 @@ export class JoiningClaimsFormSl extends LitElement {
       groups.get(key)!.push(entry);
     }
 
+    // Build description from the first active method's description
+    const activeFields = this.getActiveFields(methods);
+    const descriptions = [...new Set(
+      activeFields.map((m) => CLAIM_INPUT[m]?.description).filter(Boolean),
+    )];
+
     return html`
+      <h3 class="heading" part="heading">Verification Required</h3>
+      ${descriptions.length > 0
+        ? html`<p class="description" part="description">${descriptions[0]}</p>`
+        : nothing}
       <form @submit=${this.handleSubmit} novalidate>
         ${[...groups.entries()].map(([key, entries]) => {
           if (key === 'standalone') {
@@ -162,10 +219,12 @@ export class JoiningClaimsFormSl extends LitElement {
           return this.renderOrGroup(groupIndex, groupMethods);
         })}
         <div class="actions" part="actions">
-          <sl-button
-            variant="default"
-            @click=${this.handleCancel}
-          >Cancel</sl-button>
+          ${this.hasOrGroups()
+            ? html`<sl-button
+                variant="default"
+                @click=${this.handleCancel}
+              >Cancel</sl-button>`
+            : nothing}
           <sl-button
             variant="primary"
             type="submit"
