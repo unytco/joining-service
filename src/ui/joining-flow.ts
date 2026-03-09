@@ -14,6 +14,9 @@ import './joining-status.js';
 /** Methods handled automatically without user interaction. */
 const AUTO_METHODS = new Set(['open', 'agent_whitelist']);
 
+/** Default maximum number of poll iterations before timing out. */
+const DEFAULT_MAX_POLL_ATTEMPTS = 30;
+
 export interface JoinCompleteDetail {
   provision: JoinProvision;
   claims: Record<string, string>;
@@ -32,6 +35,7 @@ export interface JoinErrorDetail {
  * 5. Retrieves provision on success
  *
  * Headless: renders child components with no styling.
+ * Extend this class and override render() for styled variants.
  */
 @customElement('joining-flow')
 export class JoiningFlow extends LitElement {
@@ -58,26 +62,30 @@ export class JoiningFlow extends LitElement {
   @property({ attribute: false })
   claims?: Record<string, string>;
 
-  @state()
-  private flowStatus: JoiningStatusValue = 'idle';
+  /** Maximum poll attempts before timing out. */
+  @property({ type: Number, attribute: 'max-poll-attempts' })
+  maxPollAttempts = DEFAULT_MAX_POLL_ATTEMPTS;
 
   @state()
-  private statusReason?: string;
+  protected flowStatus: JoiningStatusValue = 'idle';
 
   @state()
-  private authMethods: AuthMethodEntry[] = [];
+  protected statusReason?: string;
 
   @state()
-  private currentChallenge: Challenge | null = null;
+  protected authMethods: AuthMethodEntry[] = [];
 
   @state()
-  private collectedClaims: Record<string, string> = {};
+  protected currentChallenge: Challenge | null = null;
 
   @state()
-  private pendingChallengeResolve: ((response: string) => void) | null = null;
+  protected collectedClaims: Record<string, string> = {};
 
-  /** Disable shadow DOM for external styling. */
-  protected override createRenderRoot() {
+  @state()
+  protected pendingChallengeResolve: ((response: string) => void) | null = null;
+
+  /** Disable shadow DOM for external styling. Subclasses may re-enable. */
+  protected override createRenderRoot(): HTMLElement | ShadowRoot {
     return this;
   }
 
@@ -115,7 +123,7 @@ export class JoiningFlow extends LitElement {
     }
   }
 
-  private getClient(): JoiningClient {
+  protected getClient(): JoiningClient {
     if (this.joiningClient) return this.joiningClient;
     if (this.serviceUrl) return JoiningClient.fromUrl(this.serviceUrl);
     throw new Error('Either service-url or joiningClient must be provided');
@@ -135,7 +143,6 @@ export class JoiningFlow extends LitElement {
 
   private hasPrefilledClaims(methods: AuthMethodEntry[]): boolean {
     if (!this.claims || Object.keys(this.claims).length === 0) return false;
-    // Check if pre-filled claims cover all interactive methods
     for (const entry of methods) {
       if (typeof entry === 'string') {
         if (!AUTO_METHODS.has(entry) && !this.claims[entry]) return false;
@@ -149,7 +156,7 @@ export class JoiningFlow extends LitElement {
     return true;
   }
 
-  private async executeJoin(client: JoiningClient) {
+  protected async executeJoin(client: JoiningClient) {
     if (!this.agentKey) {
       throw new Error('agent-key must be provided');
     }
@@ -158,11 +165,15 @@ export class JoiningFlow extends LitElement {
     let session = await client.join(this.agentKey, this.collectedClaims);
 
     const satisfiedGroups = new Set<string>();
+    let pollCount = 0;
 
     while (session.status === 'pending') {
       this.flowStatus = 'verifying';
 
       if (!session.challenges || session.challenges.length === 0) {
+        if (++pollCount > this.maxPollAttempts) {
+          throw new Error('Verification timed out. Please try again.');
+        }
         await delay(session.pollIntervalMs ?? 2000);
         session = await session.pollStatus();
         continue;
@@ -188,6 +199,10 @@ export class JoiningFlow extends LitElement {
         if (challenge.type === 'hc_auth_approval') {
           // Polling type: show waiting UI, poll for resolution
           this.currentChallenge = challenge;
+          if (++pollCount > this.maxPollAttempts) {
+            this.currentChallenge = null;
+            throw new Error('Verification timed out. Please try again.');
+          }
           await delay(session.pollIntervalMs ?? 2000);
           session = await session.pollStatus();
           this.currentChallenge = null;
@@ -195,7 +210,8 @@ export class JoiningFlow extends LitElement {
           break;
         }
 
-        // Interactive challenge: prompt user
+        // Interactive challenge: prompt user (resets poll count since user is active)
+        pollCount = 0;
         const response = await this.promptForChallenge(challenge);
         session = await session.verify(challenge.id, response);
         if (challenge.group) satisfiedGroups.add(challenge.group);
@@ -204,6 +220,9 @@ export class JoiningFlow extends LitElement {
       }
 
       if (!madeProgress) {
+        if (++pollCount > this.maxPollAttempts) {
+          throw new Error('Verification timed out. Please try again.');
+        }
         await delay(session.pollIntervalMs ?? 2000);
         session = await session.pollStatus();
       }
@@ -246,20 +265,20 @@ export class JoiningFlow extends LitElement {
     return uint8ArrayToBase64(signature);
   }
 
-  private promptForChallenge(challenge: Challenge): Promise<string> {
+  protected promptForChallenge(challenge: Challenge): Promise<string> {
     return new Promise((resolve) => {
       this.currentChallenge = challenge;
       this.pendingChallengeResolve = resolve;
     });
   }
 
-  private handleClaimsSubmitted(e: CustomEvent<ClaimsSubmittedDetail>) {
+  protected handleClaimsSubmitted(e: CustomEvent<ClaimsSubmittedDetail>) {
     this.collectedClaims = e.detail.claims;
     const client = this.getClient();
     this.executeJoin(client).catch((err) => this.handleError(err));
   }
 
-  private handleChallengeResponse(e: CustomEvent<ChallengeResponseDetail>) {
+  protected handleChallengeResponse(e: CustomEvent<ChallengeResponseDetail>) {
     if (this.pendingChallengeResolve) {
       this.pendingChallengeResolve(e.detail.response);
       this.pendingChallengeResolve = null;
@@ -267,11 +286,11 @@ export class JoiningFlow extends LitElement {
     }
   }
 
-  private handleRetry() {
+  protected handleRetry() {
     this.start();
   }
 
-  private handleError(e: unknown) {
+  protected handleError(e: unknown) {
     const error = e instanceof Error ? e : new Error(String(e));
     this.flowStatus = 'error';
     this.statusReason = error.message;

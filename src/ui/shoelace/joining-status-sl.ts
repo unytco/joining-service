@@ -29,7 +29,7 @@ export class JoiningStatusSl extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      font-family: var(--sl-font-sans);
+      font-family: var(--sl-font-sans, sans-serif);
     }
     .status-content {
       display: flex;
@@ -41,13 +41,13 @@ export class JoiningStatusSl extends LitElement {
     }
     .reason {
       display: block;
-      font-size: var(--sl-font-size-small);
-      color: var(--sl-color-neutral-600);
+      font-size: var(--sl-font-size-small, 0.875rem);
+      color: var(--sl-color-neutral-600, #666);
       margin-top: 0.25rem;
     }
     sl-spinner {
       font-size: 1rem;
-      --indicator-color: var(--sl-color-primary-600);
+      --indicator-color: var(--sl-color-primary-600, #2563eb);
     }
     .retry {
       margin-top: 0.75rem;

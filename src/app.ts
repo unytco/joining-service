@@ -625,6 +625,10 @@ export function createApp(ctx: ServiceContext): Hono {
 
   // ---- POST /v1/reconnect ----
   app.post('/v1/reconnect', async (c) => {
+    if (ctx.config.reconnect?.enabled === false) {
+      return c.notFound();
+    }
+
     const body = await c.req.json();
     const { agent_key, timestamp, signature } = body;
 

@@ -24,14 +24,9 @@ export class JoiningChallengeDialogSl extends LitElement {
       display: block;
       font-family: var(--sl-font-sans);
     }
-    .heading {
-      font-size: var(--sl-font-size-large);
-      font-weight: var(--sl-font-weight-semibold, 600);
-      margin: 0 0 0.5rem 0;
-    }
     .description {
-      color: var(--sl-color-neutral-800);
-      font-size: var(--sl-font-size-medium);
+      color: var(--sl-color-neutral-800, #333);
+      font-size: var(--sl-font-size-medium, 1rem);
       line-height: 1.5;
       margin-bottom: var(--joining-field-spacing, 1rem);
     }
@@ -44,11 +39,11 @@ export class JoiningChallengeDialogSl extends LitElement {
       align-items: center;
       gap: 1rem;
       padding: 2rem 0;
-      color: var(--sl-color-neutral-600);
+      color: var(--sl-color-neutral-600, #666);
     }
     .waiting sl-spinner {
       font-size: 2rem;
-      --indicator-color: var(--sl-color-primary-600);
+      --indicator-color: var(--sl-color-primary-600, #2563eb);
     }
     .actions {
       display: flex;
@@ -56,7 +51,6 @@ export class JoiningChallengeDialogSl extends LitElement {
       justify-content: flex-end;
       margin-top: var(--joining-action-margin-top, 1.5rem);
     }
-    /* Ensure button text is vertically centered */
     .actions sl-button::part(label) {
       display: flex;
       align-items: center;
@@ -126,7 +120,6 @@ export class JoiningChallengeDialogSl extends LitElement {
   }
 
   private handleDialogRequestClose(e: CustomEvent) {
-    // Prevent closing via overlay click or escape during polling
     if (this.challenge && POLLING_TYPES.has(this.challenge.type)) {
       e.preventDefault();
       return;
@@ -142,28 +135,35 @@ export class JoiningChallengeDialogSl extends LitElement {
     const isPolling = POLLING_TYPES.has(this.challenge.type);
 
     return html`
-      <h3 class="heading" part="heading">${isPolling ? 'Please Wait' : 'Verification Confirmation'}</h3>
-      <p class="description" part="description">${this.challenge.description}</p>
+      <sl-dialog
+        label=${isPolling ? 'Please Wait' : 'Verification Required'}
+        ?open=${this.open}
+        @sl-request-close=${this.handleDialogRequestClose}
+      >
+        <p class="description" part="description">${this.challenge.description}</p>
 
-      ${isPolling
-        ? html`
-            <div class="waiting">
-              <sl-spinner></sl-spinner>
-              <span>Waiting for approval...</span>
-            </div>
-          `
-        : html`
-            <div class="form-field">${this.renderChallengeInput()}</div>
-            <div class="actions" part="actions">
-              <sl-button
-                variant="primary"
-                ?disabled=${!this.inputValue.trim()}
-                @click=${this.handleSubmit}
-              >
-                Verify
-              </sl-button>
-            </div>
-          `}
+        ${isPolling
+          ? html`
+              <div class="waiting">
+                <sl-spinner></sl-spinner>
+                <span>Waiting for approval...</span>
+              </div>
+            `
+          : html`
+              <div class="form-field">${this.renderChallengeInput()}</div>
+              <div class="actions" part="actions" slot="footer">
+                <sl-button
+                  variant="default"
+                  @click=${() => this.close()}
+                >Cancel</sl-button>
+                <sl-button
+                  variant="primary"
+                  ?disabled=${!this.inputValue.trim()}
+                  @click=${this.handleSubmit}
+                >Verify</sl-button>
+              </div>
+            `}
+      </sl-dialog>
     `;
   }
 

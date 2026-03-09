@@ -13,6 +13,7 @@ import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
 const AUTO_METHODS: Set<AuthMethod> = new Set(['open', 'agent_whitelist']);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+?[\d\s\-().]{7,}$/;
 
 const CLAIM_INPUT: Record<string, { label: string; type: string; placeholder: string; claimKey: string; description: string }> = {
   invite_code: {
@@ -43,16 +44,16 @@ export class JoiningClaimsFormSl extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      font-family: var(--sl-font-sans);
+      font-family: var(--sl-font-sans, sans-serif);
     }
     .heading {
-      font-size: var(--sl-font-size-large);
+      font-size: var(--sl-font-size-large, 1.25rem);
       font-weight: var(--sl-font-weight-semibold, 600);
       margin: 0 0 0.5rem 0;
     }
     .description {
-      color: var(--sl-color-neutral-800);
-      font-size: var(--sl-font-size-medium);
+      color: var(--sl-color-neutral-800, #333);
+      font-size: var(--sl-font-size-medium, 1rem);
       line-height: 1.5;
       margin-bottom: var(--joining-field-spacing, 1rem);
     }
@@ -72,14 +73,14 @@ export class JoiningClaimsFormSl extends LitElement {
       justify-content: center;
     }
     .or-group {
-      border: 1px solid var(--sl-color-neutral-200);
-      border-radius: var(--sl-border-radius-medium);
+      border: 1px solid var(--sl-color-neutral-200, #e5e7eb);
+      border-radius: var(--sl-border-radius-medium, 0.25rem);
       padding: var(--joining-group-padding, 1rem);
       margin-bottom: var(--joining-field-spacing, 1rem);
     }
     .or-group-label {
-      font-size: var(--sl-font-size-small);
-      color: var(--sl-color-neutral-600);
+      font-size: var(--sl-font-size-small, 0.875rem);
+      color: var(--sl-color-neutral-600, #666);
       margin-bottom: 0.5rem;
     }
   `;
@@ -139,6 +140,7 @@ export class JoiningClaimsFormSl extends LitElement {
       const val = (this.values[m] ?? '').trim();
       if (!val) return false;
       if (CLAIM_INPUT[m]?.type === 'email' && !EMAIL_RE.test(val)) return false;
+      if (CLAIM_INPUT[m]?.type === 'tel' && !PHONE_RE.test(val)) return false;
       return true;
     });
   }
@@ -177,10 +179,6 @@ export class JoiningClaimsFormSl extends LitElement {
     );
   }
 
-  private hasOrGroups(): boolean {
-    return this.authMethods.some((entry) => typeof entry !== 'string' && 'any_of' in entry);
-  }
-
   private handleCancel() {
     this.dispatchEvent(
       new CustomEvent('claims-cancelled', { bubbles: true, composed: true }),
@@ -206,9 +204,7 @@ export class JoiningClaimsFormSl extends LitElement {
 
     return html`
       <h3 class="heading" part="heading">Verification Required</h3>
-      ${descriptions.length > 0
-        ? html`<p class="description" part="description">${descriptions[0]}</p>`
-        : nothing}
+      ${descriptions.map((d) => html`<p class="description" part="description">${d}</p>`)}
       <form @submit=${this.handleSubmit} novalidate>
         ${[...groups.entries()].map(([key, entries]) => {
           if (key === 'standalone') {
@@ -219,12 +215,10 @@ export class JoiningClaimsFormSl extends LitElement {
           return this.renderOrGroup(groupIndex, groupMethods);
         })}
         <div class="actions" part="actions">
-          ${this.hasOrGroups()
-            ? html`<sl-button
-                variant="default"
-                @click=${this.handleCancel}
-              >Cancel</sl-button>`
-            : nothing}
+          <sl-button
+            variant="default"
+            @click=${this.handleCancel}
+          >Cancel</sl-button>
           <sl-button
             variant="primary"
             type="submit"

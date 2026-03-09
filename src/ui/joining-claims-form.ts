@@ -9,6 +9,7 @@ const AUTO_METHODS: Set<AuthMethod> = new Set([
 ]);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+?[\d\s\-().]{7,}$/;
 
 /** Methods with built-in claim inputs. claimKey is the key sent to the server. */
 const CLAIM_INPUT: Record<string, { label: string; type: string; placeholder: string; claimKey: string; description: string }> = {
@@ -100,6 +101,7 @@ export class JoiningClaimsForm extends LitElement {
       const val = (this.values[m] ?? '').trim();
       if (!val) return false;
       if (CLAIM_INPUT[m]?.type === 'email' && !EMAIL_RE.test(val)) return false;
+      if (CLAIM_INPUT[m]?.type === 'tel' && !PHONE_RE.test(val)) return false;
       return true;
     });
   }
@@ -174,9 +176,7 @@ export class JoiningClaimsForm extends LitElement {
 
     return html`
       <h3 part="heading">Verification Required</h3>
-      ${descriptions.length > 0
-        ? html`<p part="description">${descriptions[0]}</p>`
-        : nothing}
+      ${descriptions.map((d) => html`<p part="description">${d}</p>`)}
       <form
         part="form"
         @submit=${this.handleSubmit}

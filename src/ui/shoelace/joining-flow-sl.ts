@@ -1,25 +1,18 @@
-import { LitElement, html, css, nothing } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { JoiningClient, JoinSession, JoiningError } from '../../client/joining.js';
-import type { AuthMethodEntry, Challenge, JoinProvision } from '../../types.js';
-import type { JoiningStatusValue } from '../joining-status.js';
-import type { ClaimsSubmittedDetail } from '../joining-claims-form.js';
-import type { ChallengeResponseDetail } from '../joining-challenge-dialog.js';
-import type { JoinCompleteDetail, JoinErrorDetail } from '../joining-flow.js';
+import { html, css, nothing } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { JoiningFlow } from '../joining-flow.js';
 
 // Register Shoelace sub-components
 import './joining-claims-form-sl.js';
 import './joining-challenge-dialog-sl.js';
 import './joining-status-sl.js';
 
-const AUTO_METHODS = new Set(['open', 'agent_whitelist']);
-
 @customElement('joining-flow-sl')
-export class JoiningFlowSl extends LitElement {
+export class JoiningFlowSl extends JoiningFlow {
   static override styles = css`
     :host {
       display: block;
-      font-family: var(--sl-font-sans);
+      font-family: var(--sl-font-sans, sans-serif);
       max-width: var(--joining-max-width, 480px);
       margin: var(--joining-margin, 0 auto);
     }
@@ -31,228 +24,9 @@ export class JoiningFlowSl extends LitElement {
     }
   `;
 
-  @property({ attribute: 'service-url' })
-  serviceUrl?: string;
-
-  @property({ attribute: false })
-  joiningClient?: JoiningClient;
-
-  @property({ attribute: 'agent-key' })
-  agentKey?: string;
-
-  @property({ attribute: false })
-  signNonce?: (nonce: Uint8Array) => Promise<Uint8Array>;
-
-  @property({ attribute: false })
-  claims?: Record<string, string>;
-
-  @state()
-  private flowStatus: JoiningStatusValue = 'idle';
-
-  @state()
-  private statusReason?: string;
-
-  @state()
-  private authMethods: AuthMethodEntry[] = [];
-
-  @state()
-  private currentChallenge: Challenge | null = null;
-
-  @state()
-  private collectedClaims: Record<string, string> = {};
-
-  @state()
-  private pendingChallengeResolve: ((response: string) => void) | null = null;
-
-  override connectedCallback() {
-    super.connectedCallback();
-    if (this.serviceUrl || this.joiningClient) {
-      this.start();
-    }
-  }
-
-  async start() {
-    try {
-      this.flowStatus = 'connecting';
-      this.statusReason = undefined;
-
-      const client = this.getClient();
-      const info = await client.getInfo();
-      this.authMethods = info.auth_methods;
-
-      const needsClaims = this.needsInteractiveClaims(info.auth_methods);
-
-      if (needsClaims && !this.hasPrefilledClaims(info.auth_methods)) {
-        this.flowStatus = 'collecting-claims';
-        return;
-      }
-
-      this.collectedClaims = this.claims ?? {};
-      await this.executeJoin(client);
-    } catch (e) {
-      this.handleError(e);
-    }
-  }
-
-  private getClient(): JoiningClient {
-    if (this.joiningClient) return this.joiningClient;
-    if (this.serviceUrl) return JoiningClient.fromUrl(this.serviceUrl);
-    throw new Error('Either service-url or joiningClient must be provided');
-  }
-
-  private needsInteractiveClaims(methods: AuthMethodEntry[]): boolean {
-    for (const entry of methods) {
-      if (typeof entry === 'string') {
-        if (!AUTO_METHODS.has(entry)) return true;
-      } else if ('any_of' in entry) {
-        if (entry.any_of.some((m) => !AUTO_METHODS.has(m))) return true;
-      }
-    }
-    return false;
-  }
-
-  private hasPrefilledClaims(methods: AuthMethodEntry[]): boolean {
-    if (!this.claims || Object.keys(this.claims).length === 0) return false;
-    for (const entry of methods) {
-      if (typeof entry === 'string') {
-        if (!AUTO_METHODS.has(entry) && !this.claims[entry]) return false;
-      } else if ('any_of' in entry) {
-        const satisfied = entry.any_of.some(
-          (m) => AUTO_METHODS.has(m) || (this.claims && this.claims[m]),
-        );
-        if (!satisfied) return false;
-      }
-    }
-    return true;
-  }
-
-  private async executeJoin(client: JoiningClient) {
-    if (!this.agentKey) throw new Error('agent-key must be provided');
-
-    this.flowStatus = 'joining';
-    let session = await client.join(this.agentKey, this.collectedClaims);
-
-    const satisfiedGroups = new Set<string>();
-
-    while (session.status === 'pending') {
-      this.flowStatus = 'verifying';
-
-      if (!session.challenges || session.challenges.length === 0) {
-        await delay(session.pollIntervalMs ?? 2000);
-        session = await session.pollStatus();
-        continue;
-      }
-
-      let madeProgress = false;
-
-      for (const challenge of session.challenges) {
-        if (challenge.completed) continue;
-        if (challenge.group && satisfiedGroups.has(challenge.group)) continue;
-
-        if (challenge.type === 'agent_whitelist') {
-          const response = await this.handleAgentWhitelist(challenge);
-          if (response) {
-            session = await session.verify(challenge.id, response);
-            if (challenge.group) satisfiedGroups.add(challenge.group);
-            madeProgress = true;
-            break;
-          }
-          continue;
-        }
-
-        if (challenge.type === 'hc_auth_approval') {
-          this.currentChallenge = challenge;
-          await delay(session.pollIntervalMs ?? 2000);
-          session = await session.pollStatus();
-          this.currentChallenge = null;
-          madeProgress = true;
-          break;
-        }
-
-        const response = await this.promptForChallenge(challenge);
-        session = await session.verify(challenge.id, response);
-        if (challenge.group) satisfiedGroups.add(challenge.group);
-        madeProgress = true;
-        break;
-      }
-
-      if (!madeProgress) {
-        await delay(session.pollIntervalMs ?? 2000);
-        session = await session.pollStatus();
-      }
-    }
-
-    if (session.status === 'rejected') {
-      this.flowStatus = 'rejected';
-      this.statusReason = session.reason ?? 'Join request was rejected';
-      this.dispatchEvent(
-        new CustomEvent<JoinErrorDetail>('join-error', {
-          detail: { error: new JoiningError('join_rejected', this.statusReason, 0) },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-      return;
-    }
-
-    this.flowStatus = 'provisioning';
-    const provision = await session.getProvision();
-
-    this.flowStatus = 'ready';
-    this.dispatchEvent(
-      new CustomEvent<JoinCompleteDetail>('join-complete', {
-        detail: { provision, claims: this.collectedClaims },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  private async handleAgentWhitelist(challenge: Challenge): Promise<string | null> {
-    if (!this.signNonce) return null;
-    const nonceB64 = challenge.metadata?.nonce as string | undefined;
-    if (!nonceB64) return null;
-    const nonceBytes = base64ToUint8Array(nonceB64);
-    const signature = await this.signNonce(nonceBytes);
-    return uint8ArrayToBase64(signature);
-  }
-
-  private promptForChallenge(challenge: Challenge): Promise<string> {
-    return new Promise((resolve) => {
-      this.currentChallenge = challenge;
-      this.pendingChallengeResolve = resolve;
-    });
-  }
-
-  private handleClaimsSubmitted(e: CustomEvent<ClaimsSubmittedDetail>) {
-    this.collectedClaims = e.detail.claims;
-    const client = this.getClient();
-    this.executeJoin(client).catch((err) => this.handleError(err));
-  }
-
-  private handleChallengeResponse(e: CustomEvent<ChallengeResponseDetail>) {
-    if (this.pendingChallengeResolve) {
-      this.pendingChallengeResolve(e.detail.response);
-      this.pendingChallengeResolve = null;
-      this.currentChallenge = null;
-    }
-  }
-
-  private handleRetry() {
-    this.start();
-  }
-
-  private handleError(e: unknown) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    this.flowStatus = 'error';
-    this.statusReason = error.message;
-    this.dispatchEvent(
-      new CustomEvent<JoinErrorDetail>('join-error', {
-        detail: { error },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+  /** Re-enable shadow DOM for Shoelace styling isolation. */
+  protected override createRenderRoot(): HTMLElement | ShadowRoot {
+    return this.attachShadow({ mode: 'open' });
   }
 
   protected override render() {
@@ -287,33 +61,6 @@ export class JoiningFlowSl extends LitElement {
       </div>
     `;
   }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function base64ToUint8Array(b64: string): Uint8Array {
-  if (typeof Buffer !== 'undefined') {
-    return new Uint8Array(Buffer.from(b64, 'base64'));
-  }
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(bytes).toString('base64');
-  }
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 }
 
 declare global {

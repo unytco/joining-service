@@ -28,7 +28,7 @@ describe('JoiningChallengeDialog', () => {
   it('renders nothing when closed', async () => {
     const el = createDialog();
     await el.updateComplete;
-    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.querySelector('dialog')).toBeNull();
   });
 
   it('renders dialog when open with a challenge', async () => {
@@ -37,7 +37,7 @@ describe('JoiningChallengeDialog', () => {
     el.open = true;
     await el.updateComplete;
 
-    const dialog = el.querySelector('[role="dialog"]');
+    const dialog = el.querySelector('dialog');
     expect(dialog).not.toBeNull();
 
     const desc = el.querySelector('[part="description"]');
@@ -49,7 +49,7 @@ describe('JoiningChallengeDialog', () => {
     el.challenge = makeChallenge({ type: 'agent_whitelist' });
     el.open = true;
     await el.updateComplete;
-    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.querySelector('dialog')).toBeNull();
   });
 
   it('renders waiting state for hc_auth_approval', async () => {
