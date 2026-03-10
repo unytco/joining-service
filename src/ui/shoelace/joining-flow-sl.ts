@@ -43,7 +43,7 @@ export class JoiningFlowSl extends JoiningFlow {
               <joining-claims-form-sl
                 .authMethods=${this.authMethods}
                 @claims-submitted=${this.handleClaimsSubmitted}
-                @claims-cancelled=${() => this.handleError(new Error('Cancelled by user'))}
+                @claims-cancelled=${() => this.handleError(new Error('Cancelled'))}
               ></joining-claims-form-sl>
             `
           : nothing}
@@ -54,7 +54,7 @@ export class JoiningFlowSl extends JoiningFlow {
                 .challenge=${this.currentChallenge}
                 .open=${true}
                 @challenge-response=${this.handleChallengeResponse}
-                @challenge-cancelled=${() => this.handleError(new Error('Challenge cancelled by user'))}
+                @challenge-cancelled=${() => this.handleError(new Error('Challenge cancelled'))}
               ></joining-challenge-dialog-sl>
             `
           : nothing}

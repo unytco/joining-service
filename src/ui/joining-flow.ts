@@ -317,7 +317,7 @@ export class JoiningFlow extends LitElement {
               <joining-claims-form
                 .authMethods=${this.authMethods}
                 @claims-submitted=${this.handleClaimsSubmitted}
-                @claims-cancelled=${() => this.handleError(new Error('Cancelled by user'))}
+                @claims-cancelled=${() => this.handleError(new Error('Cancelled'))}
               ></joining-claims-form>
             `
           : nothing}
@@ -328,7 +328,7 @@ export class JoiningFlow extends LitElement {
                 .challenge=${this.currentChallenge}
                 .open=${true}
                 @challenge-response=${this.handleChallengeResponse}
-                @challenge-cancelled=${() => this.handleError(new Error('Challenge cancelled by user'))}
+                @challenge-cancelled=${() => this.handleError(new Error('Challenge cancelled'))}
               ></joining-challenge-dialog>
             `
           : nothing}

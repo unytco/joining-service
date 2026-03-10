@@ -3,7 +3,6 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { Challenge } from '../../types.js';
 import type { ChallengeResponseDetail } from '../joining-challenge-dialog.js';
 
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
@@ -23,6 +22,11 @@ export class JoiningChallengeDialogSl extends LitElement {
     :host {
       display: block;
       font-family: var(--sl-font-sans);
+    }
+    .heading {
+      font-size: var(--sl-font-size-large, 1.25rem);
+      font-weight: var(--sl-font-weight-semibold, 600);
+      margin: 0 0 0.5rem 0;
     }
     .description {
       color: var(--sl-color-neutral-800, #333);
@@ -81,7 +85,7 @@ export class JoiningChallengeDialogSl extends LitElement {
 
       const handleCancel = () => {
         cleanup();
-        reject(new Error('Challenge cancelled by user'));
+        reject(new Error('Challenge cancelled'));
       };
 
       const cleanup = () => {
@@ -119,14 +123,6 @@ export class JoiningChallengeDialogSl extends LitElement {
     );
   }
 
-  private handleDialogRequestClose(e: CustomEvent) {
-    if (this.challenge && POLLING_TYPES.has(this.challenge.type)) {
-      e.preventDefault();
-      return;
-    }
-    this.close();
-  }
-
   protected override render() {
     if (!this.challenge) return nothing;
     if (!this.open) return nothing;
@@ -135,35 +131,30 @@ export class JoiningChallengeDialogSl extends LitElement {
     const isPolling = POLLING_TYPES.has(this.challenge.type);
 
     return html`
-      <sl-dialog
-        label=${isPolling ? 'Please Wait' : 'Verification Required'}
-        ?open=${this.open}
-        @sl-request-close=${this.handleDialogRequestClose}
-      >
-        <p class="description" part="description">${this.challenge.description}</p>
+      <h3 class="heading" part="heading">${isPolling ? 'Please Wait' : 'Verification Confirmation'}</h3>
+      <p class="description" part="description">${this.challenge.description}</p>
 
-        ${isPolling
-          ? html`
-              <div class="waiting">
-                <sl-spinner></sl-spinner>
-                <span>Waiting for approval...</span>
-              </div>
-            `
-          : html`
-              <div class="form-field">${this.renderChallengeInput()}</div>
-              <div class="actions" part="actions" slot="footer">
-                <sl-button
-                  variant="default"
-                  @click=${() => this.close()}
-                >Cancel</sl-button>
-                <sl-button
-                  variant="primary"
-                  ?disabled=${!this.inputValue.trim()}
-                  @click=${this.handleSubmit}
-                >Verify</sl-button>
-              </div>
-            `}
-      </sl-dialog>
+      ${isPolling
+        ? html`
+            <div class="waiting">
+              <sl-spinner></sl-spinner>
+              <span>Waiting for approval...</span>
+            </div>
+          `
+        : html`
+            <div class="form-field">${this.renderChallengeInput()}</div>
+            <div class="actions" part="actions">
+              <sl-button
+                variant="default"
+                @click=${() => this.close()}
+              >Cancel</sl-button>
+              <sl-button
+                variant="primary"
+                ?disabled=${!this.inputValue.trim()}
+                @click=${this.handleSubmit}
+              >Verify</sl-button>
+            </div>
+          `}
     `;
   }
 

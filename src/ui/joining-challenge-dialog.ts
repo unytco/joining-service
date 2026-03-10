@@ -67,7 +67,7 @@ export class JoiningChallengeDialog extends LitElement {
 
       const handleCancel = () => {
         cleanup();
-        reject(new Error('Challenge cancelled by user'));
+        reject(new Error('Challenge cancelled'));
       };
 
       const cleanup = () => {
