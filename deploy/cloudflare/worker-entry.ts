@@ -12,12 +12,14 @@ import { KvUrlProvider } from '../../src/urls/kv.js';
 import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
+import { HcAuthApprovalMethod } from '../../src/auth-methods/hc-auth-approval.js';
 import { PostmarkTransport } from '../../src/email/postmark.js';
 import { SendGridTransport } from '../../src/email/sendgrid.js';
-import { LairProofGenerator } from '../../src/membrane-proof/lair-signer.js';
+import { HcAuthClient } from '../../src/hc-auth/index.js';
 import type { MembraneProofGenerator } from '../../src/membrane-proof/generator.js';
 import type { AuthMethodPlugin } from '../../src/auth-methods/plugin.js';
 import type { EmailTransport } from '../../src/email/transport.js';
+import type { AuthMethod, AuthMethodEntry } from '../../src/types.js';
 
 interface Env {
   SESSIONS: KVNamespace;
@@ -46,13 +48,27 @@ function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
   return null;
 }
 
+/** Flatten AuthMethodEntry[] into unique AuthMethod names for plugin init. */
+function flattenMethods(entries: AuthMethodEntry[]): AuthMethod[] {
+  const seen = new Set<AuthMethod>();
+  for (const entry of entries) {
+    if (typeof entry === 'object' && 'any_of' in entry) {
+      for (const m of entry.any_of) seen.add(m);
+    } else {
+      seen.add(entry);
+    }
+  }
+  return [...seen];
+}
+
 function buildAuthPlugins(
   config: ServiceConfig,
   emailTransport: EmailTransport | null,
+  hcAuthClient?: HcAuthClient,
 ): Map<string, AuthMethodPlugin> {
   const plugins = new Map<string, AuthMethodPlugin>();
 
-  for (const method of config.auth_methods) {
+  for (const method of flattenMethods(config.auth_methods)) {
     switch (method) {
       case 'open':
         plugins.set('open', new OpenAuthMethod());
@@ -83,6 +99,18 @@ function buildAuthPlugins(
         );
         break;
 
+      case 'hc_auth_approval':
+        if (!hcAuthClient) {
+          throw new Error(
+            'hc_auth_approval auth method requires hc_auth config',
+          );
+        }
+        plugins.set(
+          'hc_auth_approval',
+          new HcAuthApprovalMethod(hcAuthClient),
+        );
+        break;
+
       default:
         console.warn(`Unknown auth method: ${method}, skipping`);
     }
@@ -95,6 +123,11 @@ async function buildProofGenerator(
   signingKeyHex?: string,
 ): Promise<MembraneProofGenerator | undefined> {
   if (!signingKeyHex) return undefined;
+  // Dynamic import to avoid loading WASM (libsodium) in global scope,
+  // which Cloudflare Workers disallows.
+  const { LairProofGenerator } = await import(
+    '../../src/membrane-proof/lair-signer.js'
+  );
   return LairProofGenerator.fromHex(signingKeyHex);
 }
 
@@ -114,8 +147,12 @@ export default {
 
     const urlProvider = new KvUrlProvider(env.SESSIONS);
 
+    const hcAuthClient = config.hc_auth
+      ? new HcAuthClient(config.hc_auth)
+      : undefined;
+
     const emailTransport = buildEmailTransport(config);
-    const authPlugins = buildAuthPlugins(config, emailTransport);
+    const authPlugins = buildAuthPlugins(config, emailTransport, hcAuthClient);
 
     let proofGenerator: MembraneProofGenerator | undefined;
     if (config.membrane_proof?.enabled) {
@@ -128,6 +165,7 @@ export default {
       authPlugins,
       proofGenerator,
       urlProvider,
+      hcAuthClient,
     };
 
     const app = createApp(context);
