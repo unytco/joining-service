@@ -13,6 +13,7 @@ import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
 import { PostmarkTransport } from '../../src/email/postmark.js';
+import { SendGridTransport } from '../../src/email/sendgrid.js';
 import { LairProofGenerator } from '../../src/membrane-proof/lair-signer.js';
 import type { MembraneProofGenerator } from '../../src/membrane-proof/generator.js';
 import type { AuthMethodPlugin } from '../../src/auth-methods/plugin.js';
@@ -27,12 +28,19 @@ interface Env {
 function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
   if (!config.email) return null;
 
-  // Only postmark is supported on Workers (no filesystem for FileTransport)
+  // FileTransport requires filesystem, so only API-based providers work on Workers
   if (config.email.provider === 'postmark') {
     if (!config.email.api_key || !config.email.from) {
       throw new Error('Postmark requires api_key and from');
     }
     return new PostmarkTransport(config.email.api_key, config.email.from);
+  }
+
+  if (config.email.provider === 'sendgrid') {
+    if (!config.email.api_key || !config.email.from) {
+      throw new Error('SendGrid requires api_key and from');
+    }
+    return new SendGridTransport(config.email.api_key, config.email.from);
   }
 
   return null;

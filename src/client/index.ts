@@ -9,6 +9,7 @@ export type {
   HttpGateway,
   LinkerUrl,
   AuthMethod,
+  AuthMethodEntry,
   DnaModifiers,
   Challenge,
   JoinProvision,

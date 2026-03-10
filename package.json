@@ -14,6 +14,16 @@
       "import": "./dist/client/index.js",
       "types": "./dist/client/index.d.ts"
     },
+    "./ui": {
+      "source": "./src/ui/index.ts",
+      "import": "./dist/ui/index.js",
+      "types": "./dist/ui/index.d.ts"
+    },
+    "./ui/shoelace": {
+      "source": "./src/ui/shoelace/index.ts",
+      "import": "./dist/ui/shoelace/index.js",
+      "types": "./dist/ui/shoelace/index.d.ts"
+    },
     "./test": {
       "source": "./test/e2e/helpers.ts",
       "import": "./dist/test/e2e/helpers.js",
@@ -26,6 +36,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:ui": "vitest run test/ui/",
     "test:watch": "vitest",
     "gen-signing-key": "NODE_OPTIONS=--preserve-symlinks tsx scripts/gen-signing-key.ts"
   },
@@ -40,10 +51,22 @@
     "libsodium-wrappers": "^0.8.2"
   },
   "devDependencies": {
+    "@shoelace-style/shoelace": "^2.11.0",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
+    "happy-dom": "^20.8.3",
+    "lit": "^3.3.2",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "@shoelace-style/shoelace": "^2.11.0",
+    "lit": "^3.3.2"
+  },
+  "peerDependenciesMeta": {
+    "@shoelace-style/shoelace": {
+      "optional": true
+    }
   }
 }

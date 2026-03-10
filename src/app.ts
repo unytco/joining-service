@@ -31,10 +31,25 @@ export interface ServiceContext {
 async function notifyHcAuth(
   ctx: ServiceContext,
   agentKey: string,
+  claims?: Record<string, string>,
 ): Promise<void> {
   if (!ctx.hcAuthClient) return;
   const rawKey = agentKeyToRawEd25519Base64url(agentKey);
-  const metadata = { agent_key: agentKey, happ_id: ctx.config.happ.id };
+  const metadata: Record<string, unknown> = {
+    agent_key: agentKey,
+    happ_id: ctx.config.happ.id,
+  };
+
+  // Forward configured claim keys (e.g. email, phone) to hc-auth metadata
+  const forwardKeys = ctx.config.hc_auth?.forward_claims;
+  if (forwardKeys && claims) {
+    for (const key of forwardKeys) {
+      if (claims[key]) {
+        metadata[key] = claims[key];
+      }
+    }
+  }
+
   try {
     await ctx.hcAuthClient.registerAndAuthorize(rawKey, metadata);
   } catch (err) {
@@ -344,7 +359,7 @@ export function createApp(ctx: ServiceContext): Hono {
 
     if (finalStatus === 'ready') {
       if (!usedHcAuthApproval(allChallenges)) {
-        await notifyHcAuth(ctx, agent_key);
+        await notifyHcAuth(ctx, agent_key, claims);
       }
       await notifyLinkers(ctx, agent_key);
     }
@@ -463,7 +478,7 @@ export function createApp(ctx: ServiceContext): Hono {
 
     if (newStatus === 'ready') {
       if (!usedHcAuthApproval(session.challenges)) {
-        await notifyHcAuth(ctx, session.agent_key);
+        await notifyHcAuth(ctx, session.agent_key, session.claims);
       }
       await notifyLinkers(ctx, session.agent_key);
     }
@@ -610,6 +625,10 @@ export function createApp(ctx: ServiceContext): Hono {
 
   // ---- POST /v1/reconnect ----
   app.post('/v1/reconnect', async (c) => {
+    if (ctx.config.reconnect?.enabled === false) {
+      return c.notFound();
+    }
+
     const body = await c.req.json();
     const { agent_key, timestamp, signature } = body;
 
