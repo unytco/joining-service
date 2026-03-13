@@ -142,9 +142,9 @@ describe('JoiningChallengeDialogSl', () => {
     expect(el.shadowRoot!.querySelector('sl-input')).toBeNull();
   });
 
-  it('renders nothing for agent_whitelist', async () => {
+  it('renders nothing for agent_allow_list', async () => {
     const el = document.createElement('joining-challenge-dialog-sl') as JoiningChallengeDialogSl;
-    el.challenge = makeChallenge({ type: 'agent_whitelist' });
+    el.challenge = makeChallenge({ type: 'agent_allow_list' });
     el.open = true;
     document.body.appendChild(el);
     await el.updateComplete;

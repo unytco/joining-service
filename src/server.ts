@@ -8,7 +8,7 @@ import type { SessionStore } from './session/store.js';
 import { OpenAuthMethod } from './auth-methods/open.js';
 import { EmailCodeAuthMethod } from './auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from './auth-methods/invite-code.js';
-import { AgentWhitelistAuthMethod } from './auth-methods/agent-whitelist.js';
+import { AgentAllowListAuthMethod } from './auth-methods/agent-allow-list.js';
 import { HcAuthApprovalMethod } from './auth-methods/hc-auth-approval.js';
 import { FileTransport } from './email/file.js';
 import { PostmarkTransport } from './email/postmark.js';
@@ -97,10 +97,10 @@ function buildAuthPlugins(
         );
         break;
 
-      case 'agent_whitelist':
+      case 'agent_allow_list':
         plugins.set(
-          'agent_whitelist',
-          new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
+          'agent_allow_list',
+          new AgentAllowListAuthMethod(config.allowed_agents ?? []),
         );
         break;
 

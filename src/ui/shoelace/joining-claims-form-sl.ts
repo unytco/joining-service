@@ -10,7 +10,7 @@ import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
 import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
 
-const AUTO_METHODS: Set<AuthMethod> = new Set(['open', 'agent_whitelist']);
+const AUTO_METHODS: Set<AuthMethod> = new Set(['open', 'agent_allow_list']);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[\d\s\-().]{7,}$/;

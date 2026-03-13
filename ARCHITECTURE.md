@@ -146,19 +146,19 @@ Multiple auth methods combined. Top-level entries are AND'd; `{ any_of: [...] }`
 
 **Flow**: Invite code verified at join time. Email and SMS challenges issued as OR alternatives (same `group` id). Agent verifies whichever channel they prefer to reach `status: "ready"`.
 
-### Profile 4b: Agent Whitelist
+### Profile 4b: Agent Allow List
 
 Pre-approved agent keys sign a nonce to prove identity. Can be standalone or combined with other methods in OR groups.
 
 | Setting | Value |
 |---------|-------|
-| `auth_methods` | `['agent_whitelist']` or `[{ any_of: ['agent_whitelist', 'invite_code'] }]` |
+| `auth_methods` | `['agent_allow_list']` or `[{ any_of: ['agent_allow_list', 'invite_code'] }]` |
 | `allowed_agents` | `['uhCAk...', 'uhCAk...']` |
 | `membrane_proof` | optional |
 
 **Use cases**: Known-participant networks, testing with specific agent keys, fallback to invite codes for new agents.
 
-**Flow**: `POST /v1/join` checks if `agent_key` is in the allow list. If yes, returns a nonce challenge. Agent signs the nonce with their ed25519 key and submits via `POST /verify`. If in an OR group with other methods, non-whitelisted agents can use the alternatives.
+**Flow**: `POST /v1/join` checks if `agent_key` is in the allow list. If yes, returns a nonce challenge. Agent signs the nonce with their ed25519 key and submits via `POST /verify`. If in an OR group with other methods, non-allow-listed agents can use the alternatives.
 
 ### Profile 4c: HC-Auth Approval
 
@@ -182,7 +182,7 @@ All authorization layers active. Agent must pass auth challenges, receives signe
 
 | Setting | Value |
 |---------|-------|
-| `auth_methods` | `['email_code']` (or any combination, including OR groups and `agent_whitelist`) |
+| `auth_methods` | `['email_code']` (or any combination, including OR groups and `agent_allow_list`) |
 | `membrane_proof.enabled` | `true` |
 | `membrane_proof.signing_key_path` | path to persistent key |
 | `hc_auth.required` | `true` |
@@ -314,7 +314,7 @@ graph TB
 WebSocket relay servers (`h2hc-linker`) that route Holochain messages for browser-based nodes. Each linker can optionally have an **admin API** that the joining service calls to pre-authorize agents with specific capabilities (`dht_read`, `dht_write`, `k2`).
 
 - **Open linkers**: No admin API, any agent can connect.
-- **Authorized linkers**: Admin API with bearer token. Joining service calls `POST /admin/agents` to whitelist agent keys.
+- **Authorized linkers**: Admin API with bearer token. Joining service calls `POST /admin/agents` to add agent keys to the allow list.
 
 ### HTTP Gateways
 Read-only HTTP endpoints that proxy zome calls against the DHT. Used for browse-before-join UX. Each gateway entry includes:
@@ -423,7 +423,7 @@ graph TB
         Open["open<br/>No challenge, immediate ready"]
         EmailCode["email_code<br/>6-digit code via email"]
         InviteCode["invite_code<br/>Single-use pre-issued codes"]
-        AgentWL["agent_whitelist<br/>Pre-approved agent keys<br/>sign nonce to prove identity"]
+        AgentWL["agent_allow_list<br/>Pre-approved agent keys<br/>sign nonce to prove identity"]
         HcApproval["hc_auth_approval<br/>Operator/KYC approval via<br/>hc-auth server polling"]
     end
 

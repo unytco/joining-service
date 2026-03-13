@@ -21,7 +21,7 @@ describe('OR groups (any_of)', () => {
     const { agentKey, privateKey } = await generateAgentKeypair();
 
     const { request } = await createTestApp({
-      auth_methods: [{ any_of: ['agent_whitelist', 'invite_code'] }],
+      auth_methods: [{ any_of: ['agent_allow_list', 'invite_code'] }],
       allowed_agents: [agentKey],
       invite_codes: ['CODE-1'],
     });
@@ -36,7 +36,7 @@ describe('OR groups (any_of)', () => {
 
     // Both methods should produce challenges, but with the same group
     // invite_code is auto-verified, so it may already be completed
-    // agent_whitelist produces a nonce challenge
+    // agent_allow_list produces a nonce challenge
     // Since invite_code auto-verifies and is in an OR group, session should be ready
     expect(joinBody.status).toBe('ready');
   });
@@ -78,7 +78,7 @@ describe('OR groups (any_of)', () => {
 
     const { request } = await createTestApp({
       auth_methods: [
-        'agent_whitelist',
+        'agent_allow_list',
         { any_of: ['invite_code', 'email_code'] },
       ],
       allowed_agents: [agentKey],
@@ -98,11 +98,11 @@ describe('OR groups (any_of)', () => {
     const joinBody = await joinRes.json();
 
     // invite_code in the OR group auto-verifies, so the OR group is satisfied.
-    // But agent_whitelist (AND) still needs verification.
+    // But agent_allow_list (AND) still needs verification.
     expect(joinBody.status).toBe('pending');
 
     const wlChallenge = joinBody.challenges.find(
-      (c: { type: string }) => c.type === 'agent_whitelist',
+      (c: { type: string }) => c.type === 'agent_allow_list',
     );
     expect(wlChallenge).toBeDefined();
 
@@ -124,11 +124,11 @@ describe('OR groups (any_of)', () => {
   });
 
   it('OR group where no method produces challenges is rejected', async () => {
-    // agent_whitelist with non-whitelisted key, invite_code with no code claim
+    // agent_allow_list with non-allow-listed key, invite_code with no code claim
     // Both will fail to produce challenges
     const { request } = await createTestApp({
-      auth_methods: [{ any_of: ['agent_whitelist'] }],
-      allowed_agents: [], // no agents whitelisted
+      auth_methods: [{ any_of: ['agent_allow_list'] }],
+      allowed_agents: [], // no agents allow-listed
     });
 
     const agentKey = fakeAgentKey();
@@ -143,16 +143,16 @@ describe('OR groups (any_of)', () => {
     expect(body.reason).toContain('No eligible auth method');
   });
 
-  it('non-whitelisted agent can still join via OR alternative', async () => {
+  it('non-allow-listed agent can still join via OR alternative', async () => {
     const agentKey = fakeAgentKey(99);
 
     const { request } = await createTestApp({
-      auth_methods: [{ any_of: ['agent_whitelist', 'invite_code'] }],
-      allowed_agents: [], // this agent is not whitelisted
+      auth_methods: [{ any_of: ['agent_allow_list', 'invite_code'] }],
+      allowed_agents: [], // this agent is not allow-listed
       invite_codes: ['FALLBACK-CODE'],
     });
 
-    // agent_whitelist returns empty (not whitelisted),
+    // agent_allow_list returns empty (not allow-listed),
     // but invite_code in the same OR group should work
     const joinRes = await request('/v1/join', {
       method: 'POST',

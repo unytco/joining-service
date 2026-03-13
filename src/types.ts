@@ -49,7 +49,7 @@ export type AuthMethod =
   | 'evm_signature'
   | 'solana_signature'
   | 'invite_code'
-  | 'agent_whitelist'
+  | 'agent_allow_list'
   | 'hc_auth_approval'
   | `x-${string}`;
 

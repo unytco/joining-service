@@ -4,8 +4,8 @@ import type { AgentPubKeyB64, Challenge } from '../types.js';
 import type { AuthMethodPlugin } from './plugin.js';
 import { fromBase64, decodeHashFromBase64 } from '../utils.js';
 
-export class AgentWhitelistAuthMethod implements AuthMethodPlugin {
-  type = 'agent_whitelist';
+export class AgentAllowListAuthMethod implements AuthMethodPlugin {
+  type = 'agent_allow_list';
 
   private allowedAgents: Set<AgentPubKeyB64>;
 
@@ -28,8 +28,8 @@ export class AgentWhitelistAuthMethod implements AuthMethodPlugin {
 
     return [
       {
-        id: `ch_agent_wl_${Date.now()}`,
-        type: 'agent_whitelist',
+        id: `ch_agent_al_${Date.now()}`,
+        type: 'agent_allow_list',
         description: 'Sign the nonce with your agent key to prove identity',
         expires_at: expiresAt,
         metadata: { nonce, agent_key: agentKey },

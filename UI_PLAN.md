@@ -29,7 +29,7 @@ Each exists in headless (`<joining-*>`) and styled (`<joining-*-sl>`) variants.
 | open               | None               | None                    | Automatic pass-through         |
 | invite_code        | Text input         | Text input (if needed)  | Can satisfy via claims or challenge |
 | email_code         | Email input        | 6-digit code input      | Two-step: collect email, verify code |
-| agent_whitelist    | None               | None                    | Automatic (client signs nonce) |
+| agent_allow_list    | None               | None                    | Automatic (client signs nonce) |
 | hc_auth_approval   | None               | Polling indicator       | "Pending approval..." + auto-poll |
 | sms_code           | Phone input        | Code input              | Same pattern as email_code     |
 | evm_signature      | Wallet connect slot | Sign message            | Requires wallet adapter        |
@@ -55,7 +55,7 @@ For OR groups (`{ any_of: [...] }`), the UI shows a method selector (tabs in Sho
 
 ## Stage 1: Foundation — Headless base components
 
-Supports invite_code and email_code in UI; open and agent_whitelist automatically (no UI needed).
+Supports invite_code and email_code in UI; open and agent_allow_list automatically (no UI needed).
 
 ### 1.1 Project scaffolding
 - [ ] Create `src/ui/` directory
@@ -69,7 +69,7 @@ Supports invite_code and email_code in UI; open and agent_whitelist automaticall
 - [ ] Renders inputs based on auth methods:
   - invite_code -> text input
   - email_code -> email input
-  - Automatic methods (open, agent_whitelist) -> nothing
+  - Automatic methods (open, agent_allow_list) -> nothing
   - Unsupported/future methods -> named slot
 - [ ] For `{ any_of: [...] }` groups, renders method selector (radio/fieldset)
 - [ ] Emits `claims-submitted` event with `Record<string, string>`
@@ -95,10 +95,10 @@ Supports invite_code and email_code in UI; open and agent_whitelist automaticall
 ### 1.5 Headless `<joining-flow>` orchestrator
 - [ ] Accepts: serviceUrl or joiningClient, plus agentKey
 - [ ] Flow: fetch info -> show claims form -> join -> handle challenges -> provision
-- [ ] Handles agent_whitelist automatically via signNonce callback
+- [ ] Handles agent_allow_list automatically via signNonce callback
 - [ ] Emits `join-complete` with JoinProvision
 - [ ] Emits `join-error` with error details
-- [ ] Accepts signNonce callback for agent_whitelist
+- [ ] Accepts signNonce callback for agent_allow_list
 
 ### 1.6 Tests
 - [ ] Unit tests per component (@open-wc/testing or vitest + happy-dom)
