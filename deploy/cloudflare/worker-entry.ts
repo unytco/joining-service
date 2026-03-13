@@ -13,6 +13,7 @@ import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
 import { HcAuthApprovalMethod } from '../../src/auth-methods/hc-auth-approval.js';
+import { AgentWhitelistAuthMethod } from '../../src/auth-methods/agent-whitelist.js';
 import { PostmarkTransport } from '../../src/email/postmark.js';
 import { SendGridTransport } from '../../src/email/sendgrid.js';
 import { HcAuthClient } from '../../src/hc-auth/index.js';
@@ -96,6 +97,13 @@ function buildAuthPlugins(
         plugins.set(
           'invite_code',
           new InviteCodeAuthMethod(config.invite_codes ?? []),
+        );
+        break;
+
+      case 'agent_whitelist':
+        plugins.set(
+          'agent_whitelist',
+          new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
         );
         break;
 
