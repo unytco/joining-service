@@ -51,6 +51,7 @@ export type AuthMethod =
   | 'invite_code'
   | 'agent_allow_list'
   | 'hc_auth_approval'
+  | 'delegated_verification'
   | `x-${string}`;
 
 export interface AuthMethodGroup {

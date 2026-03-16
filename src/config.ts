@@ -1,6 +1,8 @@
 import type { AgentPubKeyB64, AuthMethodEntry, DnaModifiers } from './types.js';
 import type { HcAuthConfig } from './hc-auth/index.js';
 import type { LinkerAuthConfig } from './linker-auth/index.js';
+import type { DelegatedVerificationConfig } from './auth-methods/delegated-verification.js';
+import { validateDelegatedVerificationConfig } from './auth-methods/delegated-verification.js';
 
 export interface ServiceConfig {
   happ: {
@@ -44,6 +46,7 @@ export interface ServiceConfig {
   port?: number;
   hc_auth?: HcAuthConfig;
   linker_auth?: LinkerAuthConfig;
+  delegated_verification?: DelegatedVerificationConfig;
 }
 
 const DEFAULTS = {
@@ -65,6 +68,11 @@ export function resolveConfig(partial: Partial<ServiceConfig>): ServiceConfig {
   }
   if (!partial.auth_methods?.length) {
     throw new Error('config: at least one auth_method is required');
+  }
+
+  // Validate delegated_verification config if present
+  if (partial.delegated_verification) {
+    validateDelegatedVerificationConfig(partial.delegated_verification);
   }
 
   return {

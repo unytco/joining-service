@@ -10,6 +10,7 @@ import { EmailCodeAuthMethod } from './auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from './auth-methods/invite-code.js';
 import { AgentAllowListAuthMethod } from './auth-methods/agent-allow-list.js';
 import { HcAuthApprovalMethod } from './auth-methods/hc-auth-approval.js';
+import { DelegatedVerificationAuthMethod } from './auth-methods/delegated-verification.js';
 import { FileTransport } from './email/file.js';
 import { PostmarkTransport } from './email/postmark.js';
 import { SendGridTransport } from './email/sendgrid.js';
@@ -113,6 +114,18 @@ function buildAuthPlugins(
         plugins.set(
           'hc_auth_approval',
           new HcAuthApprovalMethod(hcAuthClient),
+        );
+        break;
+
+      case 'delegated_verification':
+        if (!config.delegated_verification) {
+          throw new Error(
+            'delegated_verification auth method requires delegated_verification config',
+          );
+        }
+        plugins.set(
+          'delegated_verification',
+          new DelegatedVerificationAuthMethod(),
         );
         break;
 
