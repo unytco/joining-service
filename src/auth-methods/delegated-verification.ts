@@ -21,7 +21,7 @@ export interface DelegatedVerificationPayload {
   verified_at: string;
   verification_method: string;
   reference_id?: string;
-  attested_claims?: Record<string, string>;
+  attested_claims: Record<string, string>;
 }
 
 interface RateWindow {
@@ -75,13 +75,6 @@ export interface DelegatedValidationError {
 }
 
 /**
- * Validate a delegated verification request.
- * Called from the join handler before the standard plugin flow.
- *
- * Returns either a success result with the matched partner and payload,
- * or an error result with HTTP status, code, and message.
- */
-/**
  * Validate the shape of a delegated_verification payload at runtime.
  * Returns null if valid, or an error result if malformed.
  */
@@ -126,15 +119,13 @@ export function validatePayloadShape(
     };
   }
 
-  if (p.attested_claims !== undefined) {
-    if (typeof p.attested_claims !== 'object' || p.attested_claims === null || Array.isArray(p.attested_claims)) {
-      return {
-        valid: false,
-        status: 400,
-        code: 'invalid_payload',
-        message: 'delegated_verification.attested_claims must be an object if provided',
-      };
-    }
+  if (typeof p.attested_claims !== 'object' || p.attested_claims === null || Array.isArray(p.attested_claims)) {
+    return {
+      valid: false,
+      status: 400,
+      code: 'invalid_payload',
+      message: 'delegated_verification.attested_claims must be an object',
+    };
   }
 
   return null;
@@ -190,17 +181,7 @@ export function validateDelegatedVerification(
     };
   }
 
-  const apiKey = apiKeyHeader;
-  if (!apiKey) {
-    return {
-      valid: false,
-      status: 401,
-      code: 'invalid_partner_credentials',
-      message: 'Missing X-Partner-Api-Key header',
-    };
-  }
-
-  const keyHash = hashApiKey(apiKey);
+  const keyHash = hashApiKey(apiKeyHeader);
 
   // 2. Find partner by API key hash
   const partner = config.trusted_partners.find((p) => p.api_key_hash === keyHash);
@@ -304,17 +285,38 @@ export function validateDelegatedVerification(
     };
   }
 
-  // 8. Cross-check attested_claims against body.claims
-  if (delegatedPayload.attested_claims) {
-    for (const [key, value] of Object.entries(delegatedPayload.attested_claims)) {
-      if (claims[key] !== undefined && claims[key] !== value) {
-        return {
-          valid: false,
-          status: 400,
-          code: 'claims_mismatch',
-          message: `Attested claim "${key}" does not match provided claim`,
-        };
-      }
+  // 8. Cross-check attested_claims against body.claims (bidirectional)
+  const attestedClaims = delegatedPayload.attested_claims;
+
+  // Every attested claim must exist and match in body.claims
+  for (const [key, value] of Object.entries(attestedClaims)) {
+    if (claims[key] === undefined) {
+      return {
+        valid: false,
+        status: 400,
+        code: 'claims_mismatch',
+        message: `Attested claim "${key}" is missing from provided claims`,
+      };
+    }
+    if (claims[key] !== value) {
+      return {
+        valid: false,
+        status: 400,
+        code: 'claims_mismatch',
+        message: `Attested claim "${key}" does not match provided claim`,
+      };
+    }
+  }
+
+  // Every body.claim must be attested — reject unattested claims
+  for (const key of Object.keys(claims)) {
+    if (attestedClaims[key] === undefined) {
+      return {
+        valid: false,
+        status: 400,
+        code: 'claims_mismatch',
+        message: `Claim "${key}" is not attested by the partner`,
+      };
     }
   }
 
