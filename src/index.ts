@@ -19,6 +19,8 @@ export type { AuthMethodPlugin } from './auth-methods/plugin.js';
 export { OpenAuthMethod } from './auth-methods/open.js';
 export { EmailCodeAuthMethod } from './auth-methods/email-code.js';
 export { InviteCodeAuthMethod } from './auth-methods/invite-code.js';
+export { DelegatedVerificationAuthMethod, validateDelegatedVerification, resetRateLimitState } from './auth-methods/delegated-verification.js';
+export type { TrustedPartner, DelegatedVerificationConfig, DelegatedVerificationPayload } from './auth-methods/delegated-verification.js';
 
 // Email transports
 export type { EmailTransport } from './email/transport.js';

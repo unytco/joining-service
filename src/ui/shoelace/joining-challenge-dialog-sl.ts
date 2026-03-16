@@ -7,7 +7,7 @@ import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
-const AUTO_CHALLENGE_TYPES = new Set(['agent_whitelist', 'open']);
+const AUTO_CHALLENGE_TYPES = new Set(['agent_allow_list', 'open']);
 const POLLING_TYPES = new Set(['hc_auth_approval']);
 
 const CHALLENGE_INPUT: Record<string, { label: string; inputType: string; placeholder: string }> = {

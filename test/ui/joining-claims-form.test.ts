@@ -28,8 +28,8 @@ describe('JoiningClaimsForm', () => {
     expect(el.querySelector('form')).toBeNull();
   });
 
-  it('renders nothing for agent_whitelist (automatic)', async () => {
-    const el = createForm(['agent_whitelist']);
+  it('renders nothing for agent_allow_list (automatic)', async () => {
+    const el = createForm(['agent_allow_list']);
     await el.updateComplete;
     expect(el.querySelector('form')).toBeNull();
   });

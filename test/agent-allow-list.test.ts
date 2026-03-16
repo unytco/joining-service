@@ -17,12 +17,12 @@ async function generateAgentKeypair(): Promise<{
   };
 }
 
-describe('Agent whitelist flow', () => {
-  it('whitelisted agent can join by signing nonce', async () => {
+describe('Agent allow list flow', () => {
+  it('allow-listed agent can join by signing nonce', async () => {
     const { agentKey, privateKey } = await generateAgentKeypair();
 
     const { request } = await createTestApp({
-      auth_methods: ['agent_whitelist'],
+      auth_methods: ['agent_allow_list'],
       allowed_agents: [agentKey],
     });
 
@@ -38,7 +38,7 @@ describe('Agent whitelist flow', () => {
     expect(joinBody.challenges).toHaveLength(1);
 
     const challenge = joinBody.challenges[0];
-    expect(challenge.type).toBe('agent_whitelist');
+    expect(challenge.type).toBe('agent_allow_list');
     expect(challenge.metadata.nonce).toBeDefined();
     // agent_key should be stripped from client-facing metadata
     expect(challenge.metadata.agent_key).toBeUndefined();
@@ -62,12 +62,12 @@ describe('Agent whitelist flow', () => {
     expect(verifyBody.status).toBe('ready');
   });
 
-  it('non-whitelisted agent is rejected (AND context)', async () => {
+  it('non-allow-listed agent is rejected (AND context)', async () => {
     const { agentKey } = await generateAgentKeypair();
     const { agentKey: otherKey } = await generateAgentKeypair();
 
     const { request } = await createTestApp({
-      auth_methods: ['agent_whitelist'],
+      auth_methods: ['agent_allow_list'],
       allowed_agents: [otherKey], // only otherKey is allowed
     });
 
@@ -85,7 +85,7 @@ describe('Agent whitelist flow', () => {
     const { agentKey } = await generateAgentKeypair();
 
     const { request } = await createTestApp({
-      auth_methods: ['agent_whitelist'],
+      auth_methods: ['agent_allow_list'],
       allowed_agents: [agentKey],
     });
 
@@ -111,11 +111,11 @@ describe('Agent whitelist flow', () => {
     expect(body.error.code).toBe('verification_failed');
   });
 
-  it('provision available after whitelist join', async () => {
+  it('provision available after allow list join', async () => {
     const { agentKey, privateKey } = await generateAgentKeypair();
 
     const { request } = await createTestApp({
-      auth_methods: ['agent_whitelist'],
+      auth_methods: ['agent_allow_list'],
       allowed_agents: [agentKey],
     });
 

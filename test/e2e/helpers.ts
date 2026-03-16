@@ -9,7 +9,7 @@ import { MemorySessionStore } from '../../src/session/memory-store.js';
 import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
-import { AgentWhitelistAuthMethod } from '../../src/auth-methods/agent-whitelist.js';
+import { AgentAllowListAuthMethod } from '../../src/auth-methods/agent-allow-list.js';
 import { HcAuthApprovalMethod } from '../../src/auth-methods/hc-auth-approval.js';
 import { FileTransport } from '../../src/email/file.js';
 import { LairProofGenerator } from '../../src/membrane-proof/lair-signer.js';
@@ -84,10 +84,10 @@ export async function startE2EServer(
           new InviteCodeAuthMethod(config.invite_codes ?? []),
         );
         break;
-      case 'agent_whitelist':
+      case 'agent_allow_list':
         authPlugins.set(
-          'agent_whitelist',
-          new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
+          'agent_allow_list',
+          new AgentAllowListAuthMethod(config.allowed_agents ?? []),
         );
         break;
       case 'hc_auth_approval':

@@ -5,7 +5,7 @@ import type { AuthMethodEntry, AuthMethod } from '../types.js';
 /** Methods that require no user input. */
 const AUTO_METHODS: Set<AuthMethod> = new Set([
   'open',
-  'agent_whitelist',
+  'agent_allow_list',
 ]);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

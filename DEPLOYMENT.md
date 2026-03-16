@@ -348,7 +348,7 @@ The joining service can integrate with [hc-auth-server](../hc-auth-server) in tw
 
 ### Notification mode (existing behavior)
 
-The joining service runs its own auth (email, invite code, whitelist, etc.) and notifies hc-auth after approval. The agent is automatically registered and authorized in hc-auth when the session reaches `ready`.
+The joining service runs its own auth (email, invite code, allow list, etc.) and notifies hc-auth after approval. The agent is automatically registered and authorized in hc-auth when the session reaches `ready`.
 
 ```json
 {

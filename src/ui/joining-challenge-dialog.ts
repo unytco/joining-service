@@ -4,7 +4,7 @@ import { createRef, ref } from 'lit/directives/ref.js';
 import type { Challenge } from '../types.js';
 
 /** Challenge types that are handled automatically (no user input). */
-const AUTO_CHALLENGE_TYPES = new Set(['agent_whitelist', 'open']);
+const AUTO_CHALLENGE_TYPES = new Set(['agent_allow_list', 'open']);
 
 /** Challenge types that show a waiting/polling state instead of an input. */
 const POLLING_TYPES = new Set(['hc_auth_approval']);
@@ -19,7 +19,7 @@ export interface ChallengeResponseDetail {
  *
  * For invite_code, email_code, sms_code: shows a text input.
  * For hc_auth_approval: shows a waiting indicator (no input).
- * For agent_whitelist, open: not rendered (handled automatically by orchestrator).
+ * For agent_allow_list, open: not rendered (handled automatically by orchestrator).
  * For unknown/custom types: shows a generic text input + slot.
  */
 @customElement('joining-challenge-dialog')

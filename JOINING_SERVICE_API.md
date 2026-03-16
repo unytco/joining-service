@@ -214,7 +214,7 @@ The client sends its agent key and optional identity claims. The server determin
 | `challenges[].type` | string | yes | Challenge type (matches `auth_methods` values) |
 | `challenges[].description` | string | yes | Human-readable instruction for the user |
 | `challenges[].expires_at` | string (ISO 8601) | no | When this challenge expires |
-| `challenges[].metadata` | object | no | Type-specific data (e.g., EVM signing payload, nonce for agent_whitelist) |
+| `challenges[].metadata` | object | no | Type-specific data (e.g., EVM signing payload, nonce for agent_allow_list) |
 | `challenges[].group` | string | no | OR group identifier. Challenges sharing the same group are alternatives -- completing any one satisfies the group. |
 | `reason` | string | if rejected | Human-readable rejection reason |
 | `poll_interval_ms` | number | if pending | Suggested polling interval in milliseconds |
@@ -542,7 +542,7 @@ Recommended limits:
 | `evm_signature` | `evm_address` | Sign message | hex signature `0x...` | Signing payload in `metadata` |
 | `solana_signature` | `solana_address` | Sign message | base58 signature | Signing payload in `metadata` |
 | `invite_code` | `invite_code` | none | N/A | Validated at join time |
-| `agent_whitelist` | none | Sign nonce | base64 ed25519 signature | Pre-approved agent keys only. Nonce in `metadata.nonce`. |
+| `agent_allow_list` | none | Sign nonce | base64 ed25519 signature | Pre-approved agent keys only. Nonce in `metadata.nonce`. |
 | `hc_auth_approval` | none | none (server-side) | N/A (poll `/status`) | Operator/KYC approval via hc-auth server. No client-side challenge — client polls status until approved or blocked. |
 | `x-*` | custom | custom | custom | Developer-defined methods |
 
@@ -559,9 +559,9 @@ Example: invite code required, plus either email or SMS verification:
 
 Challenges within the same OR group share a `group` field (e.g., `"g_0"`). The client can present these as alternatives and verify whichever the user completes.
 
-### Agent Whitelist Challenge
+### Agent Allow List Challenge
 
-The `agent_whitelist` method verifies that an agent's public key is in a pre-defined allow list. The server generates a random nonce; the agent signs it with their ed25519 private key to prove identity.
+The `agent_allow_list` method verifies that an agent's public key is in a pre-defined allow list. The server generates a random nonce; the agent signs it with their ed25519 private key to prove identity.
 
 - If the agent key is not in the allow list and the method is standalone (AND), the join is immediately rejected.
 - If the agent key is not in the allow list but the method is in an OR group, the other methods in the group can still satisfy it.
@@ -569,7 +569,7 @@ The `agent_whitelist` method verifies that an agent's public key is in a pre-def
 Config:
 ```json
 {
-  "auth_methods": ["agent_whitelist"],
+  "auth_methods": ["agent_allow_list"],
   "allowed_agents": ["uhCAk...base64-encoded-39-byte-AgentPubKey..."]
 }
 ```
@@ -776,7 +776,7 @@ Client                                      Joining Service
   │   completing either one is sufficient)       │
 ```
 
-### 8.7 Agent Whitelist
+### 8.7 Agent Allow List
 
 ```
 Client                                      Joining Service
@@ -787,16 +787,16 @@ Client                                      Joining Service
   │                                              │
   │◄─ { session, status: "pending",              │
   │     challenges: [{                           │
-  │       id: "ch_agent_wl_1",                   │
-  │       type: "agent_whitelist",               │
+  │       id: "ch_agent_al_1",                   │
+  │       type: "agent_allow_list",               │
   │       metadata: { nonce: "base64..." }       │
   │     }] } ──────────────────────────────────────┤
   │                                              │
   │  (client signs nonce with agent ed25519 key) │
   │                                              │
   ├─ POST /v1/join/{session}/verify              │
-  │  { challenge_id: "ch_agent_wl_1",           │
-  │    response: "base64-signature" } ───────────►│
+  │  { challenge_id: "ch_agent_al_1",           │
+  │    response: "base64-signature" } ────────────►│
   │◄─ { status: "ready" } ────────────────────────┤
 ```
 
@@ -924,7 +924,7 @@ type AuthMethod =
   | 'evm_signature'
   | 'solana_signature'
   | 'invite_code'
-  | 'agent_whitelist'
+  | 'agent_allow_list'
   | 'hc_auth_approval'
   | `x-${string}`;
 

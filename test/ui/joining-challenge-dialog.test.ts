@@ -44,9 +44,9 @@ describe('JoiningChallengeDialog', () => {
     expect(desc?.textContent).toBe('Enter your invite code');
   });
 
-  it('renders nothing for agent_whitelist challenges', async () => {
+  it('renders nothing for agent_allow_list challenges', async () => {
     const el = createDialog();
-    el.challenge = makeChallenge({ type: 'agent_whitelist' });
+    el.challenge = makeChallenge({ type: 'agent_allow_list' });
     el.open = true;
     await el.updateComplete;
     expect(el.querySelector('dialog')).toBeNull();

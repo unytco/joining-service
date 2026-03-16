@@ -12,7 +12,7 @@ import './joining-challenge-dialog.js';
 import './joining-status.js';
 
 /** Methods handled automatically without user interaction. */
-const AUTO_METHODS = new Set(['open', 'agent_whitelist']);
+const AUTO_METHODS = new Set(['open', 'agent_allow_list']);
 
 /** Default maximum number of poll iterations before timing out. */
 const DEFAULT_MAX_POLL_ATTEMPTS = 30;
@@ -52,7 +52,7 @@ export class JoiningFlow extends LitElement {
   agentKey?: string;
 
   /**
-   * Callback to sign a nonce for agent_whitelist challenges.
+   * Callback to sign a nonce for agent_allow_list challenges.
    * Receives the raw nonce bytes, must return the ed25519 signature bytes.
    */
   @property({ attribute: false })
@@ -185,8 +185,8 @@ export class JoiningFlow extends LitElement {
         if (challenge.completed) continue;
         if (challenge.group && satisfiedGroups.has(challenge.group)) continue;
 
-        if (challenge.type === 'agent_whitelist') {
-          const response = await this.handleAgentWhitelist(challenge);
+        if (challenge.type === 'agent_allow_list') {
+          const response = await this.handleAgentAllowList(challenge);
           if (response) {
             session = await session.verify(challenge.id, response);
             if (challenge.group) satisfiedGroups.add(challenge.group);
@@ -254,7 +254,7 @@ export class JoiningFlow extends LitElement {
     );
   }
 
-  private async handleAgentWhitelist(challenge: Challenge): Promise<string | null> {
+  private async handleAgentAllowList(challenge: Challenge): Promise<string | null> {
     if (!this.signNonce) return null;
 
     const nonceB64 = challenge.metadata?.nonce as string | undefined;

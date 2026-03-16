@@ -17,6 +17,11 @@ import {
 } from './utils.js';
 import type { HcAuthClient } from './hc-auth/index.js';
 import { LinkerAuthClient } from './linker-auth/index.js';
+import {
+  validateDelegatedVerification,
+  validatePayloadShape,
+  type DelegatedVerificationPayload,
+} from './auth-methods/delegated-verification.js';
 import * as ed from '@noble/ed25519';
 
 export interface ServiceContext {
@@ -120,6 +125,33 @@ async function notifyLinkers(
 
 function isGroup(entry: AuthMethodEntry): entry is AuthMethodGroup {
   return typeof entry === 'object' && 'any_of' in entry;
+}
+
+/**
+ * Shared helper: create a session in 'ready' state, notifying hc-auth and linkers.
+ * Used by both the delegated verification fast path and the normal auth completion path.
+ */
+async function createReadySession(
+  ctx: ServiceContext,
+  sessionId: string,
+  agentKey: string,
+  claims: Record<string, string>,
+  challenges: ChallengeState[],
+  options?: { skipHcAuth?: boolean },
+): Promise<void> {
+  if (!options?.skipHcAuth) {
+    await notifyHcAuth(ctx, agentKey, claims);
+  }
+  await notifyLinkers(ctx, agentKey);
+
+  await ctx.sessionStore.create({
+    id: sessionId,
+    agent_key: agentKey,
+    status: 'ready',
+    challenges,
+    claims,
+    created_at: Date.now(),
+  });
 }
 
 /** OR-aware completion: ungrouped must all pass, each group needs at least one. */
@@ -232,6 +264,76 @@ export function createApp(ctx: ServiceContext): Hono {
     // Delete any stale pending session for this agent
     if (existing) {
       await ctx.sessionStore.delete(existing.id);
+    }
+
+    // ---- Delegated verification fast path ----
+    const rawDelegatedPayload = body.delegated_verification;
+    if (rawDelegatedPayload && ctx.config.delegated_verification) {
+      // Validate payload shape before casting
+      const shapeError = validatePayloadShape(rawDelegatedPayload);
+      if (shapeError) {
+        return errorJson(shapeError.code, shapeError.message, shapeError.status);
+      }
+
+      const delegatedPayload = rawDelegatedPayload as DelegatedVerificationPayload;
+
+      // Verify the auth method is configured
+      const hasDelegated = ctx.config.auth_methods.some((entry) => {
+        if (typeof entry === 'string') return entry === 'delegated_verification';
+        if ('any_of' in entry) return entry.any_of.includes('delegated_verification');
+        return false;
+      });
+
+      if (!hasDelegated) {
+        return errorJson(
+          'partner_not_authorized',
+          'delegated_verification is not configured for this hApp',
+          403,
+        );
+      }
+
+      const apiKeyHeader = c.req.header('X-Partner-Api-Key');
+      // Determine required claims: email is required by default for delegated verification
+      const requiredClaims = ['email'];
+
+      const result = validateDelegatedVerification(
+        apiKeyHeader,
+        delegatedPayload,
+        ctx.config.delegated_verification,
+        requiredClaims,
+        claims,
+      );
+
+      if (!result.valid) {
+        return errorJson(result.code, result.message, result.status);
+      }
+
+      // Audit log
+      console.log('[delegated-verification] join accepted', {
+        partner_id: result.partner.partner_id,
+        partner_name: result.partner.name,
+        agent_key: agent_key.slice(0, 20) + '...',
+        claims_attested: Object.keys(claims),
+        verified_at: delegatedPayload.verified_at,
+        verification_method: delegatedPayload.verification_method,
+        reference_id: delegatedPayload.reference_id,
+        source_ip: c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown',
+        timestamp: new Date().toISOString(),
+      });
+
+      const sessionId = generateSessionId();
+      await createReadySession(ctx, sessionId, agent_key, claims, []);
+
+      return c.json({ session: sessionId, status: 'ready' }, 201);
+    }
+
+    // If delegated_verification payload was provided but no config exists, reject
+    if (rawDelegatedPayload && !ctx.config.delegated_verification) {
+      return errorJson(
+        'partner_not_authorized',
+        'delegated_verification is not configured for this service',
+        403,
+      );
     }
 
     const sessionId = generateSessionId();
@@ -358,20 +460,19 @@ export function createApp(ctx: ServiceContext): Hono {
     const finalStatus = allSatisfied(allChallenges) ? 'ready' : status;
 
     if (finalStatus === 'ready') {
-      if (!usedHcAuthApproval(allChallenges)) {
-        await notifyHcAuth(ctx, agent_key, claims);
-      }
-      await notifyLinkers(ctx, agent_key);
+      await createReadySession(ctx, sessionId, agent_key, claims, allChallenges, {
+        skipHcAuth: usedHcAuthApproval(allChallenges),
+      });
+    } else {
+      await ctx.sessionStore.create({
+        id: sessionId,
+        agent_key,
+        status: finalStatus,
+        challenges: allChallenges,
+        claims,
+        created_at: Date.now(),
+      });
     }
-
-    await ctx.sessionStore.create({
-      id: sessionId,
-      agent_key,
-      status: finalStatus,
-      challenges: allChallenges,
-      claims,
-      created_at: Date.now(),
-    });
 
     const response: Record<string, unknown> = {
       session: sessionId,

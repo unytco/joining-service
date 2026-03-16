@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { readFileSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import { resolveConfig, type ServiceConfig } from "./config.js";
@@ -21,6 +22,32 @@ import type { EmailTransport } from "./email/transport.js";
 import { StaticUrlProvider } from "./urls/static.js";
 import type { UrlProvider } from "./urls/provider.js";
 import { HcAuthClient } from "./hc-auth/index.js";
+=======
+import { readFileSync } from 'node:fs';
+import { serve } from '@hono/node-server';
+import { resolveConfig, type ServiceConfig } from './config.js';
+import { createApp, type ServiceContext } from './app.js';
+import { MemorySessionStore } from './session/memory-store.js';
+import { SqliteSessionStore } from './session/sqlite-store.js';
+import type { SessionStore } from './session/store.js';
+import { OpenAuthMethod } from './auth-methods/open.js';
+import { EmailCodeAuthMethod } from './auth-methods/email-code.js';
+import { InviteCodeAuthMethod } from './auth-methods/invite-code.js';
+import { AgentAllowListAuthMethod } from './auth-methods/agent-allow-list.js';
+import { HcAuthApprovalMethod } from './auth-methods/hc-auth-approval.js';
+import { DelegatedVerificationAuthMethod } from './auth-methods/delegated-verification.js';
+import { FileTransport } from './email/file.js';
+import { PostmarkTransport } from './email/postmark.js';
+import { SendGridTransport } from './email/sendgrid.js';
+import { LairProofGenerator } from './membrane-proof/lair-signer.js';
+import type { MembraneProofGenerator } from './membrane-proof/generator.js';
+import type { AuthMethodPlugin } from './auth-methods/plugin.js';
+import type { AuthMethod, AuthMethodEntry } from './types.js';
+import type { EmailTransport } from './email/transport.js';
+import { StaticUrlProvider } from './urls/static.js';
+import type { UrlProvider } from './urls/provider.js';
+import { HcAuthClient } from './hc-auth/index.js';
+>>>>>>> main
 
 function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
   if (!config.email) return null;
@@ -90,8 +117,11 @@ function buildAuthPlugins(
         plugins.set("invite_code", new InviteCodeAuthMethod(config.invite_codes ?? []));
         break;
 
-      case "agent_whitelist":
-        plugins.set("agent_whitelist", new AgentWhitelistAuthMethod(config.allowed_agents ?? []));
+      case 'agent_allow_list':
+        plugins.set(
+          'agent_allow_list',
+          new AgentAllowListAuthMethod(config.allowed_agents ?? []),
+        );
         break;
 
       case "hc_auth_approval":
@@ -99,6 +129,18 @@ function buildAuthPlugins(
           throw new Error("hc_auth_approval auth method requires hc_auth config");
         }
         plugins.set("hc_auth_approval", new HcAuthApprovalMethod(hcAuthClient));
+        break;
+
+      case 'delegated_verification':
+        if (!config.delegated_verification) {
+          throw new Error(
+            'delegated_verification auth method requires delegated_verification config',
+          );
+        }
+        plugins.set(
+          'delegated_verification',
+          new DelegatedVerificationAuthMethod(),
+        );
         break;
 
       default:

@@ -142,24 +142,24 @@ describe('JoiningFlow', () => {
     expect(claimsForm).not.toBeNull();
   });
 
-  it('handles agent_whitelist automatically', async () => {
+  it('handles agent_allow_list automatically', async () => {
     const signNonce = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
 
     // getInfo
     mockFetch.mockResolvedValueOnce(
       jsonResponse({
         happ: { id: 'test', name: 'Test' },
-        auth_methods: ['agent_whitelist'],
+        auth_methods: ['agent_allow_list'],
       }),
     );
-    // join -> pending with agent_whitelist challenge
+    // join -> pending with agent_allow_list challenge
     mockFetch.mockResolvedValueOnce(
       jsonResponse({
         session: 'sess_3',
         status: 'pending',
         challenges: [{
           id: 'ch_aw',
-          type: 'agent_whitelist',
+          type: 'agent_allow_list',
           description: 'Sign nonce',
           metadata: { nonce: btoa('testnonce') },
         }],
