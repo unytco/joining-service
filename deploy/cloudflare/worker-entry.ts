@@ -13,7 +13,8 @@ import { OpenAuthMethod } from '../../src/auth-methods/open.js';
 import { EmailCodeAuthMethod } from '../../src/auth-methods/email-code.js';
 import { InviteCodeAuthMethod } from '../../src/auth-methods/invite-code.js';
 import { HcAuthApprovalMethod } from '../../src/auth-methods/hc-auth-approval.js';
-import { AgentWhitelistAuthMethod } from '../../src/auth-methods/agent-whitelist.js';
+import { AgentAllowListAuthMethod } from '../../src/auth-methods/agent-allow-list.js';
+import { DelegatedVerificationAuthMethod } from '../../src/auth-methods/delegated-verification.js';
 import { PostmarkTransport } from '../../src/email/postmark.js';
 import { SendGridTransport } from '../../src/email/sendgrid.js';
 import { HcAuthClient } from '../../src/hc-auth/index.js';
@@ -100,10 +101,22 @@ function buildAuthPlugins(
         );
         break;
 
-      case 'agent_whitelist':
+      case 'agent_allow_list':
         plugins.set(
-          'agent_whitelist',
-          new AgentWhitelistAuthMethod(config.allowed_agents ?? []),
+          'agent_allow_list',
+          new AgentAllowListAuthMethod(config.allowed_agents ?? []),
+        );
+        break;
+
+      case 'delegated_verification':
+        if (!config.delegated_verification) {
+          throw new Error(
+            'delegated_verification auth method requires delegated_verification config',
+          );
+        }
+        plugins.set(
+          'delegated_verification',
+          new DelegatedVerificationAuthMethod(),
         );
         break;
 

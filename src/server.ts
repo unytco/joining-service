@@ -1,28 +1,3 @@
-<<<<<<< HEAD
-import { readFileSync } from "node:fs";
-import { serve } from "@hono/node-server";
-import { resolveConfig, type ServiceConfig } from "./config.js";
-import { createApp, type ServiceContext } from "./app.js";
-import { MemorySessionStore } from "./session/memory-store.js";
-import { SqliteSessionStore } from "./session/sqlite-store.js";
-import type { SessionStore } from "./session/store.js";
-import { OpenAuthMethod } from "./auth-methods/open.js";
-import { EmailCodeAuthMethod } from "./auth-methods/email-code.js";
-import { InviteCodeAuthMethod } from "./auth-methods/invite-code.js";
-import { AgentWhitelistAuthMethod } from "./auth-methods/agent-whitelist.js";
-import { HcAuthApprovalMethod } from "./auth-methods/hc-auth-approval.js";
-import { FileTransport } from "./email/file.js";
-import { PostmarkTransport } from "./email/postmark.js";
-import { SendGridTransport } from "./email/sendgrid.js";
-import { LairProofGenerator } from "./membrane-proof/lair-signer.js";
-import type { MembraneProofGenerator } from "./membrane-proof/generator.js";
-import type { AuthMethodPlugin } from "./auth-methods/plugin.js";
-import type { AuthMethod, AuthMethodEntry } from "./types.js";
-import type { EmailTransport } from "./email/transport.js";
-import { StaticUrlProvider } from "./urls/static.js";
-import type { UrlProvider } from "./urls/provider.js";
-import { HcAuthClient } from "./hc-auth/index.js";
-=======
 import { readFileSync } from 'node:fs';
 import { serve } from '@hono/node-server';
 import { resolveConfig, type ServiceConfig } from './config.js';
@@ -47,7 +22,6 @@ import type { EmailTransport } from './email/transport.js';
 import { StaticUrlProvider } from './urls/static.js';
 import type { UrlProvider } from './urls/provider.js';
 import { HcAuthClient } from './hc-auth/index.js';
->>>>>>> main
 
 function buildEmailTransport(config: ServiceConfig): EmailTransport | null {
   if (!config.email) return null;
