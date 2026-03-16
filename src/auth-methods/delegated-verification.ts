@@ -21,6 +21,7 @@ export interface DelegatedVerificationPayload {
   verified_at: string;
   verification_method: string;
   reference_id?: string;
+  attested_claims?: Record<string, string>;
 }
 
 interface RateWindow {
@@ -80,30 +81,122 @@ export interface DelegatedValidationError {
  * Returns either a success result with the matched partner and payload,
  * or an error result with HTTP status, code, and message.
  */
+/**
+ * Validate the shape of a delegated_verification payload at runtime.
+ * Returns null if valid, or an error result if malformed.
+ */
+export function validatePayloadShape(
+  payload: unknown,
+): DelegatedValidationError | null {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    return {
+      valid: false,
+      status: 400,
+      code: 'invalid_payload',
+      message: 'delegated_verification must be an object',
+    };
+  }
+
+  const p = payload as Record<string, unknown>;
+
+  if (typeof p.partner_id !== 'string' || !p.partner_id) {
+    return {
+      valid: false,
+      status: 400,
+      code: 'invalid_payload',
+      message: 'delegated_verification.partner_id must be a non-empty string',
+    };
+  }
+
+  if (typeof p.verified_at !== 'string' || !p.verified_at) {
+    return {
+      valid: false,
+      status: 400,
+      code: 'invalid_payload',
+      message: 'delegated_verification.verified_at must be a non-empty string',
+    };
+  }
+
+  if (typeof p.verification_method !== 'string' || !p.verification_method) {
+    return {
+      valid: false,
+      status: 400,
+      code: 'invalid_payload',
+      message: 'delegated_verification.verification_method must be a non-empty string',
+    };
+  }
+
+  if (p.attested_claims !== undefined) {
+    if (typeof p.attested_claims !== 'object' || p.attested_claims === null || Array.isArray(p.attested_claims)) {
+      return {
+        valid: false,
+        status: 400,
+        code: 'invalid_payload',
+        message: 'delegated_verification.attested_claims must be an object if provided',
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Validate delegated verification config on startup.
+ * Throws on invalid configuration.
+ */
+export function validateDelegatedVerificationConfig(config: DelegatedVerificationConfig): void {
+  const partnerIds = new Set<string>();
+
+  for (const partner of config.trusted_partners) {
+    if (partnerIds.has(partner.partner_id)) {
+      throw new Error(`Duplicate partner_id in delegated_verification config: "${partner.partner_id}"`);
+    }
+    partnerIds.add(partner.partner_id);
+
+    if (!partner.api_key_hash.startsWith('sha256:')) {
+      throw new Error(
+        `Invalid api_key_hash for partner "${partner.partner_id}": must start with "sha256:"`,
+      );
+    }
+
+    if (typeof partner.rate_limit !== 'number' || partner.rate_limit <= 0) {
+      throw new Error(
+        `Invalid rate_limit for partner "${partner.partner_id}": must be a positive number`,
+      );
+    }
+
+    if (typeof partner.rate_limit_window_minutes !== 'number' || partner.rate_limit_window_minutes <= 0) {
+      throw new Error(
+        `Invalid rate_limit_window_minutes for partner "${partner.partner_id}": must be a positive number`,
+      );
+    }
+  }
+}
+
 export function validateDelegatedVerification(
-  authHeader: string | undefined,
+  apiKeyHeader: string | undefined,
   delegatedPayload: DelegatedVerificationPayload,
   config: DelegatedVerificationConfig,
   requiredClaims: string[],
   claims: Record<string, string>,
 ): DelegatedValidationResult | DelegatedValidationError {
-  // 1. Extract and validate API key
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  // 1. Extract and validate API key from X-Partner-Api-Key header
+  if (!apiKeyHeader) {
     return {
       valid: false,
       status: 401,
       code: 'invalid_partner_credentials',
-      message: 'Missing or invalid Authorization header',
+      message: 'Missing X-Partner-Api-Key header',
     };
   }
 
-  const apiKey = authHeader.slice(7);
+  const apiKey = apiKeyHeader;
   if (!apiKey) {
     return {
       valid: false,
       status: 401,
       code: 'invalid_partner_credentials',
-      message: 'Missing or invalid Authorization header',
+      message: 'Missing X-Partner-Api-Key header',
     };
   }
 
@@ -209,6 +302,20 @@ export function validateDelegatedVerification(
       code: 'missing_claims',
       message: 'Invalid email format',
     };
+  }
+
+  // 8. Cross-check attested_claims against body.claims
+  if (delegatedPayload.attested_claims) {
+    for (const [key, value] of Object.entries(delegatedPayload.attested_claims)) {
+      if (claims[key] !== undefined && claims[key] !== value) {
+        return {
+          valid: false,
+          status: 400,
+          code: 'claims_mismatch',
+          message: `Attested claim "${key}" does not match provided claim`,
+        };
+      }
+    }
   }
 
   // All checks passed — increment rate limit counter

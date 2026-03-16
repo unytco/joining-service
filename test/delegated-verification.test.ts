@@ -26,6 +26,7 @@ function delegatedPayload(overrides: Record<string, unknown> = {}) {
     partner_id: 'ad4m-index',
     verified_at: new Date().toISOString(),
     verification_method: 'email_code',
+    attested_claims: { email: 'user@example.com' },
     ...overrides,
   };
 }
@@ -45,7 +46,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(),
@@ -70,7 +71,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(),
@@ -86,7 +87,7 @@ describe('Delegated verification flow', () => {
     expect(provision.linker_urls).toBeDefined();
   });
 
-  it('missing Authorization header returns 401', async () => {
+  it('missing X-Partner-Api-Key header returns 401', async () => {
     const { request } = await createTestApp({
       auth_methods: ['delegated_verification'],
       delegated_verification: delegatedConfig,
@@ -117,7 +118,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer wrong-api-key',
+        'X-Partner-Api-Key': 'wrong-api-key',
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(2),
@@ -141,7 +142,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(3),
@@ -165,7 +166,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(4),
@@ -191,7 +192,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(5),
@@ -217,7 +218,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(6),
@@ -253,12 +254,14 @@ describe('Delegated verification flow', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${TEST_API_KEY}`,
+          'X-Partner-Api-Key': TEST_API_KEY,
         },
         body: JSON.stringify({
           agent_key: fakeAgentKey(seed + 100),
           claims: { email: `user${seed}@example.com` },
-          delegated_verification: delegatedPayload(),
+          delegated_verification: delegatedPayload({
+            attested_claims: { email: `user${seed}@example.com` },
+          }),
         }),
       });
 
@@ -286,7 +289,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(7),
@@ -309,7 +312,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(8),
@@ -339,7 +342,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(9),
@@ -363,7 +366,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(10),
@@ -391,7 +394,7 @@ describe('Delegated verification flow', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TEST_API_KEY}`,
+        'X-Partner-Api-Key': TEST_API_KEY,
       },
       body: JSON.stringify({
         agent_key: fakeAgentKey(11),
@@ -406,5 +409,194 @@ describe('Delegated verification flow', () => {
 
     const provisionRes = await request(`/v1/join/${session}/provision`);
     expect(provisionRes.status).toBe(200);
+  });
+
+  // #6 — Claim mismatch test
+  it('attested_claims mismatch with body.claims returns 400', async () => {
+    const { request } = await createTestApp({
+      auth_methods: ['delegated_verification'],
+      delegated_verification: delegatedConfig,
+    });
+
+    const res = await request('/v1/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Partner-Api-Key': TEST_API_KEY,
+      },
+      body: JSON.stringify({
+        agent_key: fakeAgentKey(50),
+        claims: { email: 'user@example.com' },
+        delegated_verification: delegatedPayload({
+          attested_claims: { email: 'different@example.com' },
+        }),
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('claims_mismatch');
+  });
+
+  // #7 — Invalid payload shape tests
+  it('missing partner_id returns 400', async () => {
+    const { request } = await createTestApp({
+      auth_methods: ['delegated_verification'],
+      delegated_verification: delegatedConfig,
+    });
+
+    const res = await request('/v1/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Partner-Api-Key': TEST_API_KEY,
+      },
+      body: JSON.stringify({
+        agent_key: fakeAgentKey(51),
+        claims: { email: 'user@example.com' },
+        delegated_verification: {
+          verified_at: new Date().toISOString(),
+          verification_method: 'email_code',
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_payload');
+  });
+
+  it('verified_at as a number returns 400', async () => {
+    const { request } = await createTestApp({
+      auth_methods: ['delegated_verification'],
+      delegated_verification: delegatedConfig,
+    });
+
+    const res = await request('/v1/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Partner-Api-Key': TEST_API_KEY,
+      },
+      body: JSON.stringify({
+        agent_key: fakeAgentKey(52),
+        claims: { email: 'user@example.com' },
+        delegated_verification: {
+          partner_id: 'ad4m-index',
+          verified_at: 12345,
+          verification_method: 'email_code',
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_payload');
+  });
+
+  it('missing verified_at returns 400', async () => {
+    const { request } = await createTestApp({
+      auth_methods: ['delegated_verification'],
+      delegated_verification: delegatedConfig,
+    });
+
+    const res = await request('/v1/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Partner-Api-Key': TEST_API_KEY,
+      },
+      body: JSON.stringify({
+        agent_key: fakeAgentKey(53),
+        claims: { email: 'user@example.com' },
+        delegated_verification: {
+          partner_id: 'ad4m-index',
+          verification_method: 'email_code',
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_payload');
+  });
+
+  it('missing verification_method returns 400', async () => {
+    const { request } = await createTestApp({
+      auth_methods: ['delegated_verification'],
+      delegated_verification: delegatedConfig,
+    });
+
+    const res = await request('/v1/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Partner-Api-Key': TEST_API_KEY,
+      },
+      body: JSON.stringify({
+        agent_key: fakeAgentKey(54),
+        claims: { email: 'user@example.com' },
+        delegated_verification: {
+          partner_id: 'ad4m-index',
+          verified_at: new Date().toISOString(),
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_payload');
+  });
+
+  it('delegated_verification: true (not an object) returns 400', async () => {
+    const { request } = await createTestApp({
+      auth_methods: ['delegated_verification'],
+      delegated_verification: delegatedConfig,
+    });
+
+    const res = await request('/v1/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Partner-Api-Key': TEST_API_KEY,
+      },
+      body: JSON.stringify({
+        agent_key: fakeAgentKey(55),
+        claims: { email: 'user@example.com' },
+        delegated_verification: true,
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_payload');
+  });
+
+  it('extra unexpected fields in payload still works', async () => {
+    const { request } = await createTestApp({
+      auth_methods: ['delegated_verification'],
+      delegated_verification: delegatedConfig,
+    });
+
+    const res = await request('/v1/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Partner-Api-Key': TEST_API_KEY,
+      },
+      body: JSON.stringify({
+        agent_key: fakeAgentKey(56),
+        claims: { email: 'user@example.com' },
+        delegated_verification: {
+          ...delegatedPayload(),
+          extra_field: 'should be ignored',
+          another_extra: 42,
+        },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.status).toBe('ready');
   });
 });

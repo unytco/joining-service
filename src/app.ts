@@ -19,6 +19,7 @@ import type { HcAuthClient } from './hc-auth/index.js';
 import { LinkerAuthClient } from './linker-auth/index.js';
 import {
   validateDelegatedVerification,
+  validatePayloadShape,
   type DelegatedVerificationPayload,
 } from './auth-methods/delegated-verification.js';
 import * as ed from '@noble/ed25519';
@@ -124,6 +125,33 @@ async function notifyLinkers(
 
 function isGroup(entry: AuthMethodEntry): entry is AuthMethodGroup {
   return typeof entry === 'object' && 'any_of' in entry;
+}
+
+/**
+ * Shared helper: create a session in 'ready' state, notifying hc-auth and linkers.
+ * Used by both the delegated verification fast path and the normal auth completion path.
+ */
+async function createReadySession(
+  ctx: ServiceContext,
+  sessionId: string,
+  agentKey: string,
+  claims: Record<string, string>,
+  challenges: ChallengeState[],
+  options?: { skipHcAuth?: boolean },
+): Promise<void> {
+  if (!options?.skipHcAuth) {
+    await notifyHcAuth(ctx, agentKey, claims);
+  }
+  await notifyLinkers(ctx, agentKey);
+
+  await ctx.sessionStore.create({
+    id: sessionId,
+    agent_key: agentKey,
+    status: 'ready',
+    challenges,
+    claims,
+    created_at: Date.now(),
+  });
 }
 
 /** OR-aware completion: ungrouped must all pass, each group needs at least one. */
@@ -239,8 +267,16 @@ export function createApp(ctx: ServiceContext): Hono {
     }
 
     // ---- Delegated verification fast path ----
-    const delegatedPayload = body.delegated_verification as DelegatedVerificationPayload | undefined;
-    if (delegatedPayload && ctx.config.delegated_verification) {
+    const rawDelegatedPayload = body.delegated_verification;
+    if (rawDelegatedPayload && ctx.config.delegated_verification) {
+      // Validate payload shape before casting
+      const shapeError = validatePayloadShape(rawDelegatedPayload);
+      if (shapeError) {
+        return errorJson(shapeError.code, shapeError.message, shapeError.status);
+      }
+
+      const delegatedPayload = rawDelegatedPayload as DelegatedVerificationPayload;
+
       // Verify the auth method is configured
       const hasDelegated = ctx.config.auth_methods.some((entry) => {
         if (typeof entry === 'string') return entry === 'delegated_verification';
@@ -256,12 +292,12 @@ export function createApp(ctx: ServiceContext): Hono {
         );
       }
 
-      const authHeader = c.req.header('Authorization');
+      const apiKeyHeader = c.req.header('X-Partner-Api-Key');
       // Determine required claims: email is required by default for delegated verification
       const requiredClaims = ['email'];
 
       const result = validateDelegatedVerification(
-        authHeader,
+        apiKeyHeader,
         delegatedPayload,
         ctx.config.delegated_verification,
         requiredClaims,
@@ -286,26 +322,13 @@ export function createApp(ctx: ServiceContext): Hono {
       });
 
       const sessionId = generateSessionId();
-
-      // Notify hc-auth and linkers
-      await notifyHcAuth(ctx, agent_key, claims);
-      await notifyLinkers(ctx, agent_key);
-
-      // Create session as immediately ready
-      await ctx.sessionStore.create({
-        id: sessionId,
-        agent_key,
-        status: 'ready',
-        challenges: [],
-        claims,
-        created_at: Date.now(),
-      });
+      await createReadySession(ctx, sessionId, agent_key, claims, []);
 
       return c.json({ session: sessionId, status: 'ready' }, 201);
     }
 
     // If delegated_verification payload was provided but no config exists, reject
-    if (delegatedPayload && !ctx.config.delegated_verification) {
+    if (rawDelegatedPayload && !ctx.config.delegated_verification) {
       return errorJson(
         'partner_not_authorized',
         'delegated_verification is not configured for this service',
@@ -437,20 +460,19 @@ export function createApp(ctx: ServiceContext): Hono {
     const finalStatus = allSatisfied(allChallenges) ? 'ready' : status;
 
     if (finalStatus === 'ready') {
-      if (!usedHcAuthApproval(allChallenges)) {
-        await notifyHcAuth(ctx, agent_key, claims);
-      }
-      await notifyLinkers(ctx, agent_key);
+      await createReadySession(ctx, sessionId, agent_key, claims, allChallenges, {
+        skipHcAuth: usedHcAuthApproval(allChallenges),
+      });
+    } else {
+      await ctx.sessionStore.create({
+        id: sessionId,
+        agent_key,
+        status: finalStatus,
+        challenges: allChallenges,
+        claims,
+        created_at: Date.now(),
+      });
     }
-
-    await ctx.sessionStore.create({
-      id: sessionId,
-      agent_key,
-      status: finalStatus,
-      challenges: allChallenges,
-      claims,
-      created_at: Date.now(),
-    });
 
     const response: Record<string, unknown> = {
       session: sessionId,
