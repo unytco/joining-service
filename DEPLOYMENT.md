@@ -336,7 +336,10 @@ curl http://localhost:3000/v1/info
 | `reconnect.enabled` | boolean | true | Allow `POST /v1/reconnect` |
 | `base_url` | string | auto-detected | Override for `/.well-known/holo-joining` response |
 | `port` | number | 3000 | |
-| `hc_auth.url` | string | — | Base URL of hc-auth-server (e.g. `https://auth.example.com`) |
+| `network.bootstrap_url` | string | — | Bootstrap server URL (returned in provision response `network_config`) |
+| `network.relay_url` | string | — | Relay server URL (returned in provision response `network_config`) |
+| `network.reveal_in_info` | boolean | false | Include `network_config` in the public `/v1/info` response. **Security note**: enabling this exposes service URLs to unauthenticated callers, which may increase DDoS surface. |
+| `hc_auth.url` | string | — | Base URL of hc-auth-server (e.g. `https://auth.example.com`). Also used as `auth_server_url` in provision response `network_config`. |
 | `hc_auth.api_token` | string | — | Bearer token from the server's `API_TOKENS` env var |
 | `hc_auth.required` | boolean | false | Block provisioning/reconnect if hc-auth is unreachable |
 
@@ -418,6 +421,60 @@ When hc-auth is configured (even without `hc_auth_approval`), `/reconnect` also 
 - A running hc-auth-server instance (see [hc-auth-server](../hc-auth-server) for setup)
 - The `api_token` must match a value in the server's `API_TOKENS` environment variable
 - For manual approval: the hc-auth ops console requires GitHub OAuth configuration
+
+---
+
+## Network config
+
+The joining service can return network service URLs (bootstrap server, relay server, auth server) in the provision response. This allows conductor runtime to discover infrastructure URLs at join time rather than requiring them to be hardcoded. The runtime can then call `/now` on the auth server to obtain necessary infromate to generate `auth_material` for the conductor config.
+
+### Configuration
+
+```json
+{
+  "network": {
+    "bootstrap_url": "https://bootstrap.holo.host",
+    "relay_url": "wss://relay.holo.host"
+  },
+  "hc_auth": {
+    "url": "https://auth.holo.host",
+    "api_token": "your-bearer-token"
+  }
+}
+```
+
+The `auth_server_url` in the response is always derived from `hc_auth.url` -- there is no separate config field. If `hc_auth` is not configured, `auth_server_url` is omitted. Each field in `network_config` is independently optional; the entire object is omitted from the response when no URLs are available.
+
+### Provision response
+
+After a successful join, `GET /v1/join/{session}/provision` returns:
+
+```json
+{
+  "linker_urls": [...],
+  "network_config": {
+    "auth_server_url": "https://auth.holo.host",
+    "bootstrap_url": "https://bootstrap.holo.host",
+    "relay_url": "wss://relay.holo.host"
+  }
+}
+```
+
+### Exposing network_config in /v1/info
+
+By default, `network_config` is **not** included in the unauthenticated `/v1/info` endpoint. This is a security consideration: exposing infrastructure URLs publicly increases their DDoS surface.
+
+To enable it (e.g., for development or when the URLs are already public):
+
+```json
+{
+  "network": {
+    "bootstrap_url": "https://bootstrap.holo.host",
+    "relay_url": "wss://relay.holo.host",
+    "reveal_in_info": true
+  }
+}
+```
 
 ---
 

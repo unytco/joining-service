@@ -183,6 +183,17 @@ function usedHcAuthApproval(challenges: ChallengeState[]): boolean {
   return challenges.some((cs) => cs.challenge.type === 'hc_auth_approval');
 }
 
+import type { NetworkConfig } from './types.js';
+
+/** Build a NetworkConfig from service config. Returns undefined if no URLs are available. */
+function buildNetworkConfig(config: ServiceConfig): NetworkConfig | undefined {
+  const nc: NetworkConfig = {};
+  if (config.hc_auth?.url) nc.auth_server_url = config.hc_auth.url;
+  if (config.network?.bootstrap_url) nc.bootstrap_url = config.network.bootstrap_url;
+  if (config.network?.relay_url) nc.relay_url = config.network.relay_url;
+  return Object.keys(nc).length > 0 ? nc : undefined;
+}
+
 function errorJson(code: string, message: string, status: number) {
   return new Response(
     JSON.stringify({ error: { code, message } }),
@@ -234,6 +245,9 @@ export function createApp(ctx: ServiceContext): Hono {
         : undefined,
       happ_bundle_url: config.happ.happ_bundle_url,
       dna_modifiers: config.dna_modifiers,
+      network_config: config.network?.reveal_in_info
+        ? buildNetworkConfig(config)
+        : undefined,
     });
   });
 
@@ -716,11 +730,15 @@ export function createApp(ctx: ServiceContext): Hono {
       }
     }
 
+    // Build network_config from config.network + hc_auth.url
+    const networkConfig = buildNetworkConfig(ctx.config);
+
     return c.json({
       linker_urls: linkerUrls,
       membrane_proofs: membraneProofs,
       happ_bundle_url: ctx.config.happ.happ_bundle_url,
       dna_modifiers: ctx.config.dna_modifiers,
+      network_config: networkConfig,
     });
   });
 
