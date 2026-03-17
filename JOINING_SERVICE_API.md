@@ -607,7 +607,29 @@ Config:
   "auth_methods": ["hc_auth_approval"],
   "hc_auth": {
     "server_url": "https://auth.example.com",
+    "api_token": "secret-admin-token",
     "required": true
+  }
+}
+```
+
+`hc_auth` config fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `server_url` | string | yes | Base URL of the hc-auth-server (e.g. `https://auth.example.com`) |
+| `api_token` | string | yes | Bearer token from the hc-auth-server's `API_TOKENS` config, used for admin API calls (transition, get) |
+| `required` | boolean | no | If `true`, a failure to communicate with hc-auth blocks provisioning. Default: `false` (non-fatal — hc-auth outage does not break joining) |
+| `forward_claims` | string[] | no | Claim keys to forward as metadata to hc-auth during registration (e.g. `["email", "phone"]`). When set, matching claims from the join session are included in the metadata payload sent to `PUT /request-auth/{pubkey}`. Only useful when other auth methods collect those claims (e.g. `email_code`, `sms_code`). Default: none |
+
+Example with `forward_claims` — forwarding verified email to hc-auth alongside an email code challenge:
+```json
+{
+  "auth_methods": ["email_code"],
+  "hc_auth": {
+    "server_url": "https://auth.example.com",
+    "api_token": "secret-admin-token",
+    "forward_claims": ["email"]
   }
 }
 ```
