@@ -22,6 +22,8 @@ export interface JoiningServiceInfo {
   };
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
+  /** Network service URLs. Only present when reveal_in_info is enabled in config. */
+  network_config?: NetworkConfig;
 }
 
 export interface HttpGateway {
@@ -101,12 +103,20 @@ export interface VerifyResponse {
   poll_interval_ms?: number;
 }
 
+export interface NetworkConfig {
+  auth_server_url?: string;
+  bootstrap_url?: string;
+  relay_url?: string;
+}
+
 export interface JoinProvision {
   /** Absent when the service does not manage linker relay URLs. Each entry may carry its own expiry. */
   linker_urls?: LinkerUrl[];
   membrane_proofs?: Record<string, string>;
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
+  /** Network service URLs for conductor configuration. Only present when at least one URL is available. */
+  network_config?: NetworkConfig;
 }
 
 export interface ReconnectRequest {

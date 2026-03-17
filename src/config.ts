@@ -44,6 +44,12 @@ export interface ServiceConfig {
     timestamp_tolerance_seconds?: number;
   };
   port?: number;
+  network?: {
+    bootstrap_url?: string;
+    relay_url?: string;
+    /** Allow network_config (including auth_server_url) in the public /v1/info response. Default: false. */
+    reveal_in_info?: boolean;
+  };
   hc_auth?: HcAuthConfig;
   linker_auth?: LinkerAuthConfig;
   delegated_verification?: DelegatedVerificationConfig;

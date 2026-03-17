@@ -136,6 +136,10 @@ Returns hApp metadata, available read-only gateways, supported auth methods, and
 | `dna_modifiers` | object | no | DNA modifiers to apply during installation |
 | `dna_modifiers.network_seed` | string | no | Network seed for DNA hash computation |
 | `dna_modifiers.properties` | object | no | DNA properties (arbitrary JSON, msgpack-encoded by client) |
+| `network_config` | object | no | Network service URLs. Only present when `network.reveal_in_info` is enabled in config (default: off). Exposing these URLs publicly may increase DDoS surface area for the listed services. |
+| `network_config.auth_server_url` | string (URL) | no | HC-Auth server URL (derived from `hc_auth.url` config) |
+| `network_config.bootstrap_url` | string (URL) | no | Bootstrap server URL |
+| `network_config.relay_url` | string (URL) | no | Relay server URL |
 
 ---
 
@@ -348,6 +352,11 @@ Retrieve the provision data needed to connect to the Holochain network. Only ava
   "dna_modifiers": {
     "network_seed": "mewsfeed-mainnet-2026",
     "properties": {}
+  },
+  "network_config": {
+    "auth_server_url": "https://auth.example.com",
+    "bootstrap_url": "https://bootstrap.example.com",
+    "relay_url": "wss://relay.example.com"
   }
 }
 ```
@@ -362,6 +371,10 @@ Retrieve the provision data needed to connect to the Holochain network. Only ava
 | `dna_modifiers` | object | no | DNA modifiers to apply during installation |
 | `dna_modifiers.network_seed` | string | no | Network seed |
 | `dna_modifiers.properties` | object | no | DNA properties (JSON; client encodes to msgpack) |
+| `network_config` | object | no | Network service URLs for conductor configuration. Only present when at least one URL is available. |
+| `network_config.auth_server_url` | string (URL) | no | HC-Auth server URL (derived from `hc_auth.url` config). The conductor runtime can call `/now` on this to obtain info for `auth_material`. |
+| `network_config.bootstrap_url` | string (URL) | no | Bootstrap server URL |
+| `network_config.relay_url` | string (URL) | no | Relay server URL |
 
 **Errors**:
 
@@ -919,6 +932,8 @@ interface JoiningServiceInfo {
   };
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
+  /** Only present when reveal_in_info is enabled in config. */
+  network_config?: NetworkConfig;
 }
 
 interface HttpGateway {
@@ -1001,6 +1016,14 @@ interface VerifyResponse {
   poll_interval_ms?: number;
 }
 
+// --- Network config (shared by /v1/info and /v1/join/{session}/provision) ---
+
+interface NetworkConfig {
+  auth_server_url?: string;
+  bootstrap_url?: string;
+  relay_url?: string;
+}
+
 // --- /v1/join/{session}/provision ---
 
 interface JoinProvision {
@@ -1009,6 +1032,8 @@ interface JoinProvision {
   membrane_proofs?: Record<string, string>;
   happ_bundle_url?: string;
   dna_modifiers?: DnaModifiers;
+  /** Network service URLs for conductor configuration. */
+  network_config?: NetworkConfig;
 }
 
 // --- /v1/reconnect ---
