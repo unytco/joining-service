@@ -133,11 +133,21 @@ async function buildProofGenerator(config: ServiceConfig): Promise<MembraneProof
     return LairProofGenerator.fromHex(keyHex);
   }
 
-  // Generate ephemeral key for dev
+  // No signing key configured. In production this MUST fail loud: signing join
+  // tokens with an ephemeral random key means proofs won't verify against the
+  // DNA's fixed authority_key (nobody can join) or the authority silently rotates
+  // every restart. A single missing config must not silently break/rotate the
+  // membrane authority. The ephemeral key is a dev-only convenience.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "membrane_proof.enabled but membrane_proof.signing_key_path is not set — " +
+        "refusing to issue join tokens with an ephemeral key in production",
+    );
+  }
   const { randomBytes } = await import("node:crypto");
   const generator = await LairProofGenerator.fromSeed(randomBytes(32));
   console.log(
-    "Ephemeral membrane proof signer (embed as joining_server_signer in DNA properties):",
+    "Ephemeral membrane proof signer (DEV ONLY — embed as joining_server_signer in DNA properties):",
     generator.signerAgentPubKeyB64,
   );
   return generator;
