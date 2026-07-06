@@ -3,7 +3,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '../../src/ui/joining-flow.js';
 import type { JoiningFlow, JoinCompleteDetail, JoinErrorDetail } from '../../src/ui/joining-flow.js';
-import { JoiningClient } from '../../src/client/joining.js';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);

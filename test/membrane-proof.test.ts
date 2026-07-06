@@ -6,7 +6,6 @@ import { sha512 } from '@noble/hashes/sha2.js';
 import { LairProofGenerator } from '../src/membrane-proof/lair-signer.js';
 import {
   decodeHashFromBase64,
-  encodeHashToBase64,
   agentPubKeyFrom32,
   dhtLocationFrom32,
 } from '../src/utils.js';

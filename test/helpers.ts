@@ -16,7 +16,7 @@ import { StaticUrlProvider } from '../src/urls/static.js';
 import type { UrlProvider } from '../src/urls/provider.js';
 import type { AuthMethodPlugin } from '../src/auth-methods/plugin.js';
 import type { HcAuthClient } from '../src/hc-auth/index.js';
-import type { AuthMethod, AuthMethodEntry } from '../src/types.js';
+import type { AuthMethod } from '../src/types.js';
 import type { Hono } from 'hono';
 import { encodeHashToBase64, dhtLocationFrom32 } from '../src/utils.js';
 
