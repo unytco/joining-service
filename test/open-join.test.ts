@@ -117,27 +117,64 @@ describe('Open join flow', () => {
     expect(body.error.code).toBe('invalid_agent_key');
   });
 
-  it('returns 409 if agent already joined', async () => {
+  it('re-join is idempotent: returns 200 with the existing session for a ready agent', async () => {
     const { request } = await createTestApp();
     const agentKey = fakeAgentKey();
 
     // First join
-    await request('/v1/join', {
+    const firstRes = await request('/v1/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_key: agentKey }),
     });
+    expect(firstRes.status).toBe(201);
+    const { session: firstSession } = await firstRes.json();
 
-    // Second join
+    // Second join (re-join) with the same, already-ready key
     const res = await request('/v1/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_key: agentKey }),
     });
 
-    expect(res.status).toBe(409);
+    // Idempotent: existing session returned as 200, not a 409 error.
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.error.code).toBe('agent_already_joined');
+    expect(body.status).toBe('ready');
+    expect(body.session).toBe(firstSession);
+    expect(body.error).toBeUndefined();
+  });
+
+  it('re-joined session can provision a fresh membrane proof', async () => {
+    const { request } = await createTestApp({
+      membrane_proof: { enabled: true },
+      dna_hashes: ['uhC0kTestDnaHash1'],
+    });
+    const agentKey = fakeAgentKey();
+
+    // Initial join.
+    await request('/v1/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_key: agentKey }),
+    });
+
+    // Re-join returns the existing ready session (200).
+    const rejoinRes = await request('/v1/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_key: agentKey }),
+    });
+    expect(rejoinRes.status).toBe(200);
+    const { session } = await rejoinRes.json();
+
+    // The re-join session provisions a freshly-regenerated, valid proof —
+    // this is the re-register recovery path, independent of any local cache.
+    const provRes = await request(`/v1/join/${session}/provision`);
+    expect(provRes.status).toBe(200);
+    const creds = await provRes.json();
+    expect(creds.membrane_proofs['uhC0kTestDnaHash1']).toBeDefined();
+    expect(typeof creds.membrane_proofs['uhC0kTestDnaHash1']).toBe('string');
   });
 
   it('returns 401 for invalid session token', async () => {

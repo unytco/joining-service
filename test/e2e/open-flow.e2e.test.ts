@@ -48,18 +48,20 @@ describe('E2E: Open auth flow', () => {
     expect(provision.membrane_proofs![testDnaHash]).toBeTruthy();
   });
 
-  it('rejects duplicate agent key with 409', async () => {
+  it('re-join is idempotent and re-provisions a fresh proof', async () => {
     const agentKey = fakeAgentKey(3);
-    await client.join(agentKey);
+    const first = await client.join(agentKey);
+    expect(first.status).toBe('ready');
 
-    try {
-      await client.join(agentKey);
-      expect.fail('Should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(JoiningError);
-      expect((e as JoiningError).code).toBe('agent_already_joined');
-      expect((e as JoiningError).httpStatus).toBe(409);
-    }
+    // Re-joining with the same key succeeds (idempotent) instead of 409.
+    const rejoined = await client.join(agentKey);
+    expect(rejoined.status).toBe('ready');
+    expect(rejoined.sessionToken).toBeTruthy();
+
+    // The re-joined session yields a freshly-regenerated, valid membrane
+    // proof — the recovery path for a re-registering agent, no local cache.
+    const provision = await rejoined.getProvision();
+    expect(provision.membrane_proofs![testDnaHash]).toBeTruthy();
   });
 
   it('rejects invalid agent key', async () => {

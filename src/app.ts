@@ -265,14 +265,16 @@ export function createApp(ctx: ServiceContext): Hono {
       return errorJson('invalid_agent_key', validation.reason!, 400);
     }
 
-    // Check if agent already joined
+    // Re-join is idempotent: an agent whose key is already registered and
+    // `ready` gets its existing session back (200) rather than a 409. It can
+    // then re-provision — the provision endpoint regenerates a fresh, valid
+    // membrane proof (new nonce/timestamp) per call, so there is no stored
+    // proof to hand back, only the session id is needed. This is what lets an
+    // agent re-join on a fresh device, after cleared storage, or onto the
+    // successor network during a migration.
     const existing = await ctx.sessionStore.findByAgentKey(agent_key);
     if (existing?.status === 'ready') {
-      return errorJson(
-        'agent_already_joined',
-        'This agent key has already completed joining. Use POST /v1/reconnect instead.',
-        409,
-      );
+      return c.json({ session: existing.id, status: 'ready' }, 200);
     }
 
     // Delete any stale pending session for this agent

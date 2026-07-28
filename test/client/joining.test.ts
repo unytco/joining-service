@@ -154,20 +154,19 @@ describe('JoiningClient', () => {
       expect(session.pollIntervalMs).toBe(2000);
     });
 
-    it('throws JoiningError on 409 agent_already_joined', async () => {
+    it('returns the existing ready session on idempotent re-join (200)', async () => {
+      // Re-joining an already-registered agent is idempotent: the service
+      // returns the existing ready session with 200 (not a 409 error), so the
+      // client just sees a normal ready session and can re-provision.
       mockFetch.mockResolvedValueOnce(
-        errorResponse('agent_already_joined', 'Already joined', 409),
+        jsonResponse({ session: 'js_existing', status: 'ready' }, 200),
       );
 
       const client = JoiningClient.fromUrl(TEST_BASE_URL);
-      try {
-        await client.join('uhCAkDuplicate');
-        expect.fail('Should have thrown');
-      } catch (e) {
-        expect(e).toBeInstanceOf(JoiningError);
-        expect((e as JoiningError).code).toBe('agent_already_joined');
-        expect((e as JoiningError).httpStatus).toBe(409);
-      }
+      const session = await client.join('uhCAkDuplicate');
+
+      expect(session.status).toBe('ready');
+      expect(session.sessionToken).toBe('js_existing');
     });
 
     it('throws JoiningError on 400 invalid_agent_key', async () => {

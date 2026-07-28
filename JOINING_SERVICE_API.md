@@ -200,6 +200,16 @@ The client sends its agent key and optional identity claims. The server determin
 }
 ```
 
+**Response** (`200 OK`) — agent already joined (idempotent re-join):
+```json
+{
+  "session": "js_x9y8z7w6",
+  "status": "ready"
+}
+```
+
+Re-`POST`ing `/v1/join` with an `agent_key` that has already completed joining is idempotent: the service returns the agent's existing ready session (`200`, no new challenges) so the client can call `GET /v1/join/{session}/provision` again. Provision regenerates a fresh, valid membrane proof on every call, so this is the supported way to re-obtain proofs on a new device, after cleared local storage, or when joining a successor network during migration. (`POST /v1/reconnect` is a different operation — it only refreshes linker/gateway URLs and returns no proofs.)
+
 **Response** (`201 Created`) — rejected:
 ```json
 {
@@ -229,8 +239,9 @@ The client sends its agent key and optional identity claims. The server determin
 |-------------|------|-------------|
 | 400 | `invalid_agent_key` | Agent key is not valid base64 or not 39 bytes |
 | 400 | `missing_claims` | Required claims for this hApp's auth method were not provided |
-| 409 | `agent_already_joined` | This agent key has already completed joining. Use `POST /v1/reconnect` instead. |
 | 429 | `rate_limited` | Too many join attempts |
+
+> A re-join by an already-`ready` agent is **not** an error — it returns `200 OK` with the existing session (see the idempotent re-join response above), not `409`.
 
 ---
 
