@@ -33,6 +33,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "bundle:worker": "wrangler deploy -c deploy/cloudflare/wrangler.toml --dry-run --outdir \"$PWD/build\"",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -58,7 +59,8 @@
     "lit": "^3.3.2",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "wrangler": "^4.119.0"
   },
   "peerDependencies": {
     "@shoelace-style/shoelace": "^2.11.0",

@@ -1,5 +1,8 @@
 node_modules/
 dist/
+build/
+release/
+.wrangler/
 tsconfig.tsbuildinfo
 *.db
 *.db-shm

@@ -2,6 +2,11 @@ name = "joining-service"
 main = "worker-entry.ts"
 compatibility_date = "2024-12-01"
 
+# Required: the service imports node:crypto (membrane proof signing, email
+# code generation, agent allow-list, delegated verification). Without this
+# flag the Worker throws at runtime on those paths.
+compatibility_flags = ["nodejs_compat"]
+
 # KV namespace for session storage
 [[kv_namespaces]]
 binding = "SESSIONS"
