@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
-import { JoiningClient, JoiningError } from '../../src/client/index.js';
+import { JoiningClient } from '../../src/client/index.js';
 import { startE2EServer, fakeAgentKey, type E2EServer } from './helpers.js';
 
 describe('E2E: Invite code flow', () => {

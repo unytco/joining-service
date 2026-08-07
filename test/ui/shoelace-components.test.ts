@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { AuthMethodEntry } from '../../src/types.js';
 import type { Challenge } from '../../src/types.js';
 import '../../src/ui/shoelace/index.js';
 import type { JoiningClaimsFormSl } from '../../src/ui/shoelace/joining-claims-form-sl.js';

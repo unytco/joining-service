@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as ed from '@noble/ed25519';
 import { createTestApp, fakeAgentKey } from './helpers.js';
 import { HcAuthClient } from '../src/hc-auth/client.js';
-import type { HcAuthRecord } from '../src/hc-auth/client.js';
 import { encodeHashToBase64, agentPubKeyFrom32 } from '../src/utils.js';
 
 function createMockClient(required = false) {

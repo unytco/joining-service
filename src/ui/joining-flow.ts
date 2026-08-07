@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { JoiningClient, JoinSession, JoiningError } from '../client/joining.js';
+import { JoiningClient, JoiningError } from '../client/joining.js';
 import type { AuthMethodEntry, Challenge, JoinProvision } from '../types.js';
 import type { JoiningStatusValue } from './joining-status.js';
 import type { ClaimsSubmittedDetail } from './joining-claims-form.js';
