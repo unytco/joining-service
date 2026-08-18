@@ -4,10 +4,9 @@
 
 REST API (Hono on Node) that brokers joining flows for new Holochain
 agents: serves membrane proofs, HTTP gateways, linker URLs, and hApp
-bundles. Talks to the `@holo-host/lair` keystore (file dep at
-`../holo-web-conductor/packages/lair`) for signing-key operations.
-Consumed by the Unyt app and other hApps that need a joining
-endpoint.
+bundles. Talks to the `@holo-host/lair` keystore, a published npm
+dependency, for signing-key operations. Consumed by the Unyt app and
+other hApps that need a joining endpoint.
 
 ## Classification
 
@@ -22,10 +21,6 @@ for the Worker variant).
 - Tests via [Vitest](https://vitest.dev/).
 - SQLite persistence via `better-sqlite3` for joining state.
 - **No `flake.nix`** — runs in the host shell with Node 22+.
-- File dep on `@holo-host/lair` from sibling
-  [`holo-web-conductor`](../holo-web-conductor/) (untracked
-  external — see workshop
-  [AGENTS.md](../AGENTS.md#submodule-map--classification)).
 
 ## Build
 
@@ -78,9 +73,6 @@ Two deploy paths:
 
 ## Related repos in workshop
 
-- File dep on `@holo-host/lair` from external
-  [`holo-web-conductor/packages/lair`](../holo-web-conductor/) (NOT
-  a submodule — sibling clone).
 - Consumed at runtime by [`unyt-sandbox/unyt`](../unyt-sandbox/unyt/)
   (and other Holochain apps that need a joining endpoint).
 - Deployable via [`automation/`](../automation/).
@@ -101,10 +93,6 @@ warrant `### Security`.
 
 ## Repo-specific rules
 
-- **Sibling file-dep on `@holo-host/lair` is load-bearing.** The
-  external `holo-web-conductor` checkout must be present at the
-  expected path. Do not vendor `lair` here — keep it as a sibling
-  dep so upstream changes flow through.
 - **SQLite migrations are forward-only.** Adding columns is fine;
   destructive migrations (drop / rename) need an explicit migration
   step, not an ad-hoc schema change.
