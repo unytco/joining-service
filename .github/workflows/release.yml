@@ -1,8 +1,19 @@
 name: Release
 
+# Releases are cut by pushing a semver tag, e.g.
+#   git tag v1.2.3 && git push origin v1.2.3
+#
+# The tag glob below is deliberately loose, GitHub tag filters cannot
+# express semver, so the test job validates it strictly and fails fast on
+# anything that is not vMAJOR.MINOR.PATCH[-prerelease][+build].
 on:
   push:
     tags: ['v*']
+
+# One release per tag; never cancel a run that may have already published.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -10,13 +21,46 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+      - name: Validate tag is semver
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Official semver.org regex, with a leading "v".
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*))?$'
+
+          if [[ ! "$TAG" =~ $semver ]]; then
+            echo "::error::Tag '$TAG' is not a valid semver release tag. Expected vMAJOR.MINOR.PATCH[-prerelease][+build], e.g. v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+
+          version="${TAG#v}"
+
+          # Strip build metadata before looking for a prerelease suffix, so
+          # that v1.2.3+build-7 is not misread as a prerelease.
+          if [[ "${version%%+*}" == *-* ]]; then
+            prerelease=true
+          else
+            prerelease=false
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version (prerelease: $prerelease)"
       - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
       - run: npm test
 
   build-worker:
@@ -34,9 +78,31 @@ jobs:
           npx wrangler deploy --dry-run \
             --config deploy/cloudflare/wrangler.toml \
             --outfile dist/worker.js
-      - name: Upload release artefacts
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
+      - name: Checksum bundle
+        run: (cd dist && sha256sum worker.js > worker.js.sha256)
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.test.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          assets=(
             dist/worker.js
+            dist/worker.js.sha256
             deploy/cloudflare/wrangler.toml
+          )
+
+          # Re-running a partially failed release should converge rather than
+          # fail on "release already exists".
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; uploading assets."
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            args=(--title "$TAG" --generate-notes)
+            if [[ "$PRERELEASE" == "true" ]]; then
+              args+=(--prerelease)
+            fi
+            gh release create "$TAG" "${args[@]}" "${assets[@]}"
+          fi
