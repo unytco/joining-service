@@ -95,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          assets=("release/${NAME}" "release/${NAME}.sha256")
+          assets=("release/${NAME}")
 
           # Re-running a partially failed release should converge rather than
           # fail on "release already exists".
